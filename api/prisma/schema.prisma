@@ -30,7 +30,7 @@ enum MovementType {
 
 enum IssuedToType {
   PERSON
-  DEPARTMENT
+  DEPT
   CUSTOMER
 }
 
@@ -47,7 +47,9 @@ model User {
 
 model Warehouse {
   id        Int        @id @default(autoincrement())
+  code      String     @unique
   name      String     @unique
+  address   String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   locations Location[]
@@ -69,24 +71,26 @@ model Location {
 }
 
 model Item {
-  id        Int             @id @default(autoincrement())
-  sku       String          @unique
-  name      String
-  category  String?
-  unit      String          @default("pcs")
-  minStock  Int             @default(0)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  barcodes  ItemBarcode[]
-  units     SerializedUnit[]
+  id          Int             @id @default(autoincrement())
+  sku         String          @unique
+  name        String
+  description String?
+  category    String?
+  unit        String          @default("pcs")
+  minStock    Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  barcodes    ItemBarcode[]
+  units       SerializedUnit[]
 }
 
 model ItemBarcode {
-  id        Int      @id @default(autoincrement())
-  itemId    Int
-  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  value     String
-  createdAt DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  itemId     Int
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  value      String
+  symbology  String?
+  createdAt  DateTime @default(now())
 
   @@index([value])
 }
@@ -105,11 +109,12 @@ model SerializedUnit {
 }
 
 model IssuedTo {
-  id           Int            @id @default(autoincrement())
-  name         String
-  type         IssuedToType   @default(PERSON)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id            Int            @id @default(autoincrement())
+  name          String
+  type          IssuedToType   @default(PERSON)
+  reference     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   movementLines MovementLine[]
 }
 

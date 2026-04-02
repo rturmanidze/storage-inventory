@@ -11,6 +11,10 @@ export class CreateItemDto {
 
   @IsString()
   @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
   category?: string;
 
   @IsString()
@@ -30,6 +34,10 @@ export class UpdateItemDto {
 
   @IsString()
   @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
   category?: string;
 
   @IsString()
@@ -46,4 +54,8 @@ export class CreateBarcodeDto {
   @IsString()
   @IsNotEmpty()
   value: string;
+
+  @IsString()
+  @IsOptional()
+  symbology?: string;
 }

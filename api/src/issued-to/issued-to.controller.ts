@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, ParseIntPipe } from '@nestjs/common';
 import { IssuedToService } from './issued-to.service';
 import { CreateIssuedToDto, UpdateIssuedToDto } from './dto/issued-to.dto';
 
@@ -23,6 +23,11 @@ export class IssuedToController {
 
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateIssuedToDto) {
+    return this.issuedToService.update(id, dto);
+  }
+
+  @Patch(':id')
+  patch(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateIssuedToDto) {
     return this.issuedToService.update(id, dto);
   }
 

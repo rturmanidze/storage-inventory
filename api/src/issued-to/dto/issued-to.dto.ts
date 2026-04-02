@@ -9,6 +9,10 @@ export class CreateIssuedToDto {
   @IsEnum(IssuedToType)
   @IsOptional()
   type?: IssuedToType;
+
+  @IsString()
+  @IsOptional()
+  reference?: string;
 }
 
 export class UpdateIssuedToDto {
@@ -19,4 +23,8 @@ export class UpdateIssuedToDto {
   @IsEnum(IssuedToType)
   @IsOptional()
   type?: IssuedToType;
+
+  @IsString()
+  @IsOptional()
+  reference?: string;
 }

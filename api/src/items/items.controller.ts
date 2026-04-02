@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, ParseIntPipe } from '@nestjs/common';
 import { ItemsService } from './items.service';
 import { CreateItemDto, UpdateItemDto, CreateBarcodeDto } from './dto/item.dto';
 
@@ -23,6 +23,11 @@ export class ItemsController {
 
   @Put(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateItemDto) {
+    return this.itemsService.update(id, dto);
+  }
+
+  @Patch(':id')
+  patch(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateItemDto) {
     return this.itemsService.update(id, dto);
   }
 

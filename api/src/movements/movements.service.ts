@@ -14,28 +14,28 @@ export class MovementsService {
 
   async receive(dto: ReceiveMovementDto, userId: number) {
     const lineData = await Promise.all(
-      dto.lines.map(async (line) => {
+      dto.serials.map(async (serial) => {
         let unit = await this.prisma.serializedUnit.findUnique({
-          where: { serial: line.serial },
+          where: { serial },
         });
         if (!unit) {
           unit = await this.prisma.serializedUnit.create({
             data: {
-              serial: line.serial,
+              serial,
               itemId: dto.itemId,
               status: UnitStatus.IN_STOCK,
-              currentLocationId: line.toLocationId,
+              currentLocationId: dto.toLocationId,
             },
           });
         } else {
           unit = await this.prisma.serializedUnit.update({
             where: { id: unit.id },
-            data: { status: UnitStatus.IN_STOCK, currentLocationId: line.toLocationId },
+            data: { status: UnitStatus.IN_STOCK, currentLocationId: dto.toLocationId },
           });
         }
         return {
           serialUnitId: unit.id,
-          toLocationId: line.toLocationId,
+          toLocationId: dto.toLocationId,
         };
       }),
     );
@@ -53,25 +53,25 @@ export class MovementsService {
 
   async transfer(dto: TransferMovementDto, userId: number) {
     const lineData = await Promise.all(
-      dto.lines.map(async (line) => {
+      dto.serials.map(async (serial) => {
         const unit = await this.prisma.serializedUnit.findUnique({
-          where: { serial: line.serial },
+          where: { serial },
         });
-        if (!unit) throw new NotFoundException(`Serial ${line.serial} not found`);
+        if (!unit) throw new NotFoundException(`Serial ${serial} not found`);
         if (unit.status !== UnitStatus.IN_STOCK) {
           throw new BadRequestException(
-            `Unit ${line.serial} cannot be transferred: status is ${unit.status}`,
+            `Unit ${serial} cannot be transferred: status is ${unit.status}`,
           );
         }
         const fromLocationId = unit.currentLocationId;
         await this.prisma.serializedUnit.update({
           where: { id: unit.id },
-          data: { currentLocationId: line.toLocationId },
+          data: { currentLocationId: dto.toLocationId },
         });
         return {
           serialUnitId: unit.id,
           fromLocationId,
-          toLocationId: line.toLocationId,
+          toLocationId: dto.toLocationId,
         };
       }),
     );
@@ -89,11 +89,11 @@ export class MovementsService {
 
   async issue(dto: IssueMovementDto, userId: number) {
     const lineData = await Promise.all(
-      dto.lines.map(async (line) => {
+      dto.serials.map(async (serial) => {
         const unit = await this.prisma.serializedUnit.findUnique({
-          where: { serial: line.serial },
+          where: { serial },
         });
-        if (!unit) throw new NotFoundException(`Serial ${line.serial} not found`);
+        if (!unit) throw new NotFoundException(`Serial ${serial} not found`);
         const fromLocationId = unit.currentLocationId;
         await this.prisma.serializedUnit.update({
           where: { id: unit.id },
@@ -120,18 +120,18 @@ export class MovementsService {
 
   async return(dto: ReturnMovementDto, userId: number) {
     const lineData = await Promise.all(
-      dto.lines.map(async (line) => {
+      dto.serials.map(async (serial) => {
         const unit = await this.prisma.serializedUnit.findUnique({
-          where: { serial: line.serial },
+          where: { serial },
         });
-        if (!unit) throw new NotFoundException(`Serial ${line.serial} not found`);
+        if (!unit) throw new NotFoundException(`Serial ${serial} not found`);
         await this.prisma.serializedUnit.update({
           where: { id: unit.id },
-          data: { status: UnitStatus.IN_STOCK, currentLocationId: line.toLocationId },
+          data: { status: UnitStatus.IN_STOCK, currentLocationId: dto.toLocationId },
         });
         return {
           serialUnitId: unit.id,
-          toLocationId: line.toLocationId,
+          toLocationId: dto.toLocationId,
         };
       }),
     );

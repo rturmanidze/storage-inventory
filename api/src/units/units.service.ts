@@ -12,7 +12,11 @@ export class UnitsService {
         ...(serial ? { serial: { contains: serial, mode: 'insensitive' } } : {}),
         ...(sku ? { item: { sku: { contains: sku, mode: 'insensitive' } } } : {}),
       },
-      include: { item: true, currentLocation: { include: { warehouse: true } } },
+      include: {
+        item: true,
+        currentLocation: { include: { warehouse: true } },
+        movementLines: { include: { issuedTo: true } },
+      },
     });
   }
 

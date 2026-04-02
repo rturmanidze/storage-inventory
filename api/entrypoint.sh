@@ -1,8 +1,9 @@
 #!/bin/sh
 set -e
 
-echo "Running database migrations..."
-npx prisma migrate deploy
+echo "Pushing schema to database..."
+# Note: For production, replace with 'prisma migrate deploy' after generating migrations
+npx prisma db push
 
 echo "Running database seed..."
 node -e "
