@@ -1,0 +1,138 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  VIEWER
+}
+
+enum UnitStatus {
+  IN_STOCK
+  ISSUED
+  QUARANTINED
+  SCRAPPED
+}
+
+enum MovementType {
+  RECEIVE
+  TRANSFER
+  ISSUE
+  RETURN
+  ADJUST
+}
+
+enum IssuedToType {
+  PERSON
+  DEPARTMENT
+  CUSTOMER
+}
+
+model User {
+  id           Int        @id @default(autoincrement())
+  username     String     @unique
+  email        String     @unique
+  passwordHash String
+  role         Role       @default(VIEWER)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  movements    Movement[]
+}
+
+model Warehouse {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  locations Location[]
+}
+
+model Location {
+  id          Int            @id @default(autoincrement())
+  warehouseId Int
+  warehouse   Warehouse      @relation(fields: [warehouseId], references: [id])
+  code        String
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  units       SerializedUnit[]
+  fromLines   MovementLine[] @relation("FromLocation")
+  toLines     MovementLine[] @relation("ToLocation")
+
+  @@unique([warehouseId, code])
+}
+
+model Item {
+  id        Int             @id @default(autoincrement())
+  sku       String          @unique
+  name      String
+  category  String?
+  unit      String          @default("pcs")
+  minStock  Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  barcodes  ItemBarcode[]
+  units     SerializedUnit[]
+}
+
+model ItemBarcode {
+  id        Int      @id @default(autoincrement())
+  itemId    Int
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  value     String
+  createdAt DateTime @default(now())
+
+  @@index([value])
+}
+
+model SerializedUnit {
+  id                Int            @id @default(autoincrement())
+  itemId            Int
+  item              Item           @relation(fields: [itemId], references: [id])
+  serial            String         @unique
+  status            UnitStatus     @default(IN_STOCK)
+  currentLocationId Int?
+  currentLocation   Location?      @relation(fields: [currentLocationId], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  movementLines     MovementLine[]
+}
+
+model IssuedTo {
+  id           Int            @id @default(autoincrement())
+  name         String
+  type         IssuedToType   @default(PERSON)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  movementLines MovementLine[]
+}
+
+model Movement {
+  id            Int            @id @default(autoincrement())
+  type          MovementType
+  note          String?
+  createdAt     DateTime       @default(now())
+  createdById   Int
+  createdBy     User           @relation(fields: [createdById], references: [id])
+  lines         MovementLine[]
+}
+
+model MovementLine {
+  id               Int             @id @default(autoincrement())
+  movementId       Int
+  movement         Movement        @relation(fields: [movementId], references: [id])
+  serialUnitId     Int
+  serialUnit       SerializedUnit  @relation(fields: [serialUnitId], references: [id])
+  fromLocationId   Int?
+  fromLocation     Location?       @relation("FromLocation", fields: [fromLocationId], references: [id])
+  toLocationId     Int?
+  toLocation       Location?       @relation("ToLocation", fields: [toLocationId], references: [id])
+  issuedToId       Int?
+  issuedTo         IssuedTo?       @relation(fields: [issuedToId], references: [id])
+}
