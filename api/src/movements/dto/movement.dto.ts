@@ -1,14 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, IsArray, ValidateNested, ArrayNotEmpty } from 'class-validator';
-import { Type } from 'class-transformer';
-
-export class ReceiveLineDto {
-  @IsString()
-  @IsNotEmpty()
-  serial: string;
-
-  @IsInt()
-  toLocationId: number;
-}
+import { IsString, IsNotEmpty, IsOptional, IsInt, IsArray, ArrayNotEmpty } from 'class-validator';
 
 export class ReceiveMovementDto {
   @IsString()
@@ -20,15 +10,9 @@ export class ReceiveMovementDto {
 
   @IsArray()
   @ArrayNotEmpty()
-  @ValidateNested({ each: true })
-  @Type(() => ReceiveLineDto)
-  lines: ReceiveLineDto[];
-}
-
-export class TransferLineDto {
-  @IsString()
-  @IsNotEmpty()
-  serial: string;
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  serials: string[];
 
   @IsInt()
   toLocationId: number;
@@ -41,15 +25,12 @@ export class TransferMovementDto {
 
   @IsArray()
   @ArrayNotEmpty()
-  @ValidateNested({ each: true })
-  @Type(() => TransferLineDto)
-  lines: TransferLineDto[];
-}
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  serials: string[];
 
-export class IssueLineDto {
-  @IsString()
-  @IsNotEmpty()
-  serial: string;
+  @IsInt()
+  toLocationId: number;
 }
 
 export class IssueMovementDto {
@@ -62,18 +43,9 @@ export class IssueMovementDto {
 
   @IsArray()
   @ArrayNotEmpty()
-  @ValidateNested({ each: true })
-  @Type(() => IssueLineDto)
-  lines: IssueLineDto[];
-}
-
-export class ReturnLineDto {
-  @IsString()
-  @IsNotEmpty()
-  serial: string;
-
-  @IsInt()
-  toLocationId: number;
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  serials: string[];
 }
 
 export class ReturnMovementDto {
@@ -83,7 +55,10 @@ export class ReturnMovementDto {
 
   @IsArray()
   @ArrayNotEmpty()
-  @ValidateNested({ each: true })
-  @Type(() => ReturnLineDto)
-  lines: ReturnLineDto[];
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  serials: string[];
+
+  @IsInt()
+  toLocationId: number;
 }

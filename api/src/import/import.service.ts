@@ -85,15 +85,18 @@ export class ImportService {
       const row = rows[i];
       const rowNum = i + 2;
       try {
-        if (!row.code || (!row.warehouseId && !row.warehouseName)) {
-          errors.push({ row: rowNum, message: 'Missing required fields: code, warehouseId or warehouseName' });
+        if (!row.code || (!row.warehouseId && !row.warehouseName && !row.warehouseCode)) {
+          errors.push({ row: rowNum, message: 'Missing required fields: code, and one of warehouseId/warehouseName/warehouseCode' });
           continue;
         }
         let warehouseId = row.warehouseId ? parseInt(row.warehouseId) : undefined;
-        if (!warehouseId && row.warehouseName) {
-          const wh = await this.prisma.warehouse.findFirst({ where: { name: row.warehouseName } });
+        if (!warehouseId) {
+          const nameOrCode = row.warehouseName || row.warehouseCode;
+          const wh = await this.prisma.warehouse.findFirst({
+            where: { OR: [{ name: nameOrCode }, { code: nameOrCode }] },
+          });
           if (!wh) {
-            errors.push({ row: rowNum, message: `Warehouse "${row.warehouseName}" not found` });
+            errors.push({ row: rowNum, message: `Warehouse "${nameOrCode}" not found` });
             continue;
           }
           warehouseId = wh.id;
@@ -183,15 +186,18 @@ export class ImportService {
       const row = rows[i];
       const rowNum = i + 2;
       try {
-        if (!row.serial || !row.locationCode || (!row.warehouseId && !row.warehouseName)) {
-          errors.push({ row: rowNum, message: 'Missing required fields: serial, locationCode, warehouseId or warehouseName' });
+        if (!row.serial || !row.locationCode || (!row.warehouseId && !row.warehouseName && !row.warehouseCode)) {
+          errors.push({ row: rowNum, message: 'Missing required fields: serial, locationCode, and one of warehouseId/warehouseName/warehouseCode' });
           continue;
         }
         let warehouseId = row.warehouseId ? parseInt(row.warehouseId) : undefined;
-        if (!warehouseId && row.warehouseName) {
-          const wh = await this.prisma.warehouse.findFirst({ where: { name: row.warehouseName } });
+        if (!warehouseId) {
+          const nameOrCode = row.warehouseName || row.warehouseCode;
+          const wh = await this.prisma.warehouse.findFirst({
+            where: { OR: [{ name: nameOrCode }, { code: nameOrCode }] },
+          });
           if (!wh) {
-            errors.push({ row: rowNum, message: `Warehouse "${row.warehouseName}" not found` });
+            errors.push({ row: rowNum, message: `Warehouse "${nameOrCode}" not found` });
             continue;
           }
           warehouseId = wh.id;

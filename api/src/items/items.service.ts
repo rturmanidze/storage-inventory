@@ -49,7 +49,7 @@ export class ItemsService {
   }
 
   addBarcode(itemId: number, dto: CreateBarcodeDto) {
-    return this.prisma.itemBarcode.create({ data: { itemId, value: dto.value } });
+    return this.prisma.itemBarcode.create({ data: { itemId, value: dto.value, symbology: dto.symbology } });
   }
 
   async removeBarcode(itemId: number, barcodeId: number) {

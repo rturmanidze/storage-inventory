@@ -6,12 +6,21 @@ export class ScanController {
   constructor(private readonly scanService: ScanService) {}
 
   @Get('barcode/:value')
-  findByBarcode(@Param('value') value: string) {
-    return this.scanService.findByBarcode(value);
+  async findByBarcode(@Param('value') value: string) {
+    const items = await this.scanService.findByBarcode(value);
+    return { items };
   }
 
   @Get('serial/:serial')
-  findBySerial(@Param('serial') serial: string) {
-    return this.scanService.findBySerial(serial);
+  async findBySerial(@Param('serial') serial: string) {
+    const unit = await this.scanService.findBySerial(serial);
+    return {
+      serial: unit.serial,
+      itemName: unit.item.name,
+      sku: unit.item.sku,
+      status: unit.status,
+      location: unit.currentLocation?.code ?? null,
+      warehouse: unit.currentLocation?.warehouse?.name ?? null,
+    };
   }
 }

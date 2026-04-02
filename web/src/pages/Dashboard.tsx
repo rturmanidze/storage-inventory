@@ -37,10 +37,10 @@ export default function Dashboard() {
   }
 
   const statusColors: Record<string, string> = {
-    AVAILABLE: 'bg-green-100 text-green-800',
+    IN_STOCK: 'bg-green-100 text-green-800',
     ISSUED: 'bg-blue-100 text-blue-800',
-    DAMAGED: 'bg-red-100 text-red-800',
-    LOST: 'bg-gray-100 text-gray-800',
+    QUARANTINED: 'bg-red-100 text-red-800',
+    SCRAPPED: 'bg-gray-100 text-gray-800',
   }
 
   return (
