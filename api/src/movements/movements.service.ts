@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ReceiveMovementDto,
@@ -58,6 +58,11 @@ export class MovementsService {
           where: { serial: line.serial },
         });
         if (!unit) throw new NotFoundException(`Serial ${line.serial} not found`);
+        if (unit.status !== UnitStatus.IN_STOCK) {
+          throw new BadRequestException(
+            `Unit ${line.serial} cannot be transferred: status is ${unit.status}`,
+          );
+        }
         const fromLocationId = unit.currentLocationId;
         await this.prisma.serializedUnit.update({
           where: { id: unit.id },
@@ -89,12 +94,14 @@ export class MovementsService {
           where: { serial: line.serial },
         });
         if (!unit) throw new NotFoundException(`Serial ${line.serial} not found`);
+        const fromLocationId = unit.currentLocationId;
         await this.prisma.serializedUnit.update({
           where: { id: unit.id },
           data: { status: UnitStatus.ISSUED, currentLocationId: null },
         });
         return {
           serialUnitId: unit.id,
+          fromLocationId,
           issuedToId: dto.issuedToId,
         };
       }),

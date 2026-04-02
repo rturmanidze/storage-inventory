@@ -163,7 +163,7 @@ export class ImportService {
         }
         await this.prisma.serializedUnit.upsert({
           where: { serial: row.serial },
-          update: {},
+          update: {}, // serial units are immutable once created; only create if missing
           create: { serial: row.serial, itemId: item.id },
         });
         success++;
