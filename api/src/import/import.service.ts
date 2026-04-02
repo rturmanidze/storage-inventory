@@ -18,6 +18,7 @@ export class ImportService {
       return parse(file.buffer, { columns: true, skip_empty_lines: true, trim: true });
     } else if (ext === 'xlsx' || ext === 'xls') {
       const workbook = new ExcelJS.Workbook();
+      // ExcelJS Buffer type is incompatible with Node's Buffer<ArrayBufferLike> in newer TypeScript versions
       await workbook.xlsx.load(file.buffer as any);
       const worksheet = workbook.worksheets[0];
       const rows: any[] = [];
