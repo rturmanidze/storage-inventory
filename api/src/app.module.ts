@@ -12,6 +12,7 @@ import { IssuedToModule } from './issued-to/issued-to.module';
 import { ScanModule } from './scan/scan.module';
 import { MovementsModule } from './movements/movements.module';
 import { ImportModule } from './import/import.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 
 @Module({
@@ -28,6 +29,7 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
     ScanModule,
     MovementsModule,
     ImportModule,
+    DashboardModule,
   ],
   providers: [
     {

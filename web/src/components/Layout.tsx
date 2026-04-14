@@ -7,22 +7,29 @@ interface NavItem {
   to: string
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Administrator',
+  MANAGER: 'Shift Manager',
+  VIEWER: 'Operations Manager',
+}
+
 const navItems: NavItem[] = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Items', to: '/items' },
-  { label: 'Warehouses', to: '/warehouses' },
-  { label: 'Issued To', to: '/issued-to' },
-  { label: 'Units (Search)', to: '/units' },
-  { label: '↩ Receive', to: '/movements/receive' },
+  { label: '🏠 Dashboard', to: '/dashboard' },
+  { label: '📦 Inventory Items', to: '/items' },
+  { label: '🏭 Warehouses', to: '/warehouses' },
+  { label: '👤 Issued To', to: '/issued-to' },
+  { label: '🔍 Unit Search', to: '/units' },
+  { label: '↩ Receive Stock', to: '/movements/receive' },
   { label: '⇄ Transfer', to: '/movements/transfer' },
-  { label: '↗ Issue', to: '/movements/issue' },
-  { label: '↙ Return', to: '/movements/return' },
+  { label: '↗ Issue Items', to: '/movements/issue' },
+  { label: '↙ Return Items', to: '/movements/return' },
   { label: '⬆ Import', to: '/import' },
 ]
 
 export default function Layout() {
   const { user, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const roleLabel = ROLE_LABELS[user?.role ?? ''] ?? user?.role ?? ''
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -36,11 +43,16 @@ export default function Layout() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-60 bg-indigo-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out
+        className={`fixed inset-y-0 left-0 z-30 w-64 bg-gray-900 text-white flex flex-col transform transition-transform duration-200 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:relative lg:translate-x-0`}
       >
-        <div className="flex items-center h-16 px-4 bg-indigo-950 shrink-0">
-          <span className="text-xl font-bold tracking-tight">📦 StorageInv</span>
+        {/* Logo */}
+        <div className="flex items-center gap-2 h-16 px-4 bg-gray-950 shrink-0">
+          <span className="text-2xl">🎰</span>
+          <div>
+            <span className="text-base font-bold tracking-tight text-white">Casino WMS</span>
+            <p className="text-xs text-gray-400 leading-none">Warehouse Management</p>
+          </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto py-4 space-y-0.5 px-2">
@@ -52,8 +64,8 @@ export default function Layout() {
               className={({ isActive }) =>
                 `flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-indigo-700 text-white'
-                    : 'text-indigo-200 hover:bg-indigo-800 hover:text-white'
+                    ? 'bg-amber-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                 }`
               }
             >
@@ -62,9 +74,9 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-indigo-800 shrink-0">
-          <p className="text-xs text-indigo-300 truncate">{user?.username}</p>
-          <p className="text-xs text-indigo-400 capitalize mb-2">{user?.role}</p>
+        <div className="p-4 border-t border-gray-800 shrink-0">
+          <p className="text-xs text-gray-300 font-medium truncate">{user?.username}</p>
+          <p className="text-xs text-amber-400 mb-2">{roleLabel}</p>
           <button onClick={logout} className="btn-secondary btn-sm w-full text-gray-700">
             Log out
           </button>
@@ -87,8 +99,8 @@ export default function Layout() {
           <div className="flex-1" />
           <div className="flex items-center gap-3 text-sm text-gray-600">
             <span className="hidden sm:inline">{user?.username}</span>
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 capitalize">
-              {user?.role}
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+              {roleLabel}
             </span>
             <button onClick={logout} className="btn-secondary btn-sm">
               Log out
