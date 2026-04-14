@@ -214,7 +214,7 @@ export default function Dashboard() {
                       </div>
                       <div className="text-right">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {item.inStockCount} / {item.minStock}
+                          {item.inStockCount} in stock (min: {item.minStock})
                         </span>
                       </div>
                     </li>
