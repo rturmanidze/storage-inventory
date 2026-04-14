@@ -15,12 +15,16 @@ export interface Item {
   unit: string | null
   minStock: number | null
   description: string | null
+  supplier: string | null
+  batch: string | null
 }
 
 const itemSchema = z.object({
   sku: z.string().min(1, 'SKU is required'),
   name: z.string().min(1, 'Name is required'),
   category: z.string().optional(),
+  supplier: z.string().optional(),
+  batch: z.string().optional(),
   unit: z.string().optional(),
   minStock: z.coerce.number().int().min(0).optional(),
   description: z.string().optional(),
@@ -78,7 +82,7 @@ export default function Items() {
 
   function openCreate() {
     setEditing(null)
-    reset({ sku: '', name: '', category: '', unit: '', minStock: 0, description: '' })
+    reset({ sku: '', name: '', category: '', supplier: '', batch: '', unit: '', minStock: 0, description: '' })
     setModalOpen(true)
   }
 
@@ -88,6 +92,8 @@ export default function Items() {
       sku: item.sku,
       name: item.name,
       category: item.category ?? '',
+      supplier: item.supplier ?? '',
+      batch: item.batch ?? '',
       unit: item.unit ?? '',
       minStock: item.minStock ?? 0,
       description: item.description ?? '',
@@ -147,6 +153,8 @@ export default function Items() {
                   <th className="table-header">SKU</th>
                   <th className="table-header">Name</th>
                   <th className="table-header hidden sm:table-cell">Category</th>
+                  <th className="table-header hidden md:table-cell">Supplier</th>
+                  <th className="table-header hidden lg:table-cell">Batch</th>
                   <th className="table-header hidden sm:table-cell">Unit</th>
                   <th className="table-header hidden md:table-cell">Min Stock</th>
                   <th className="table-header">Actions</th>
@@ -165,6 +173,8 @@ export default function Items() {
                       </button>
                     </td>
                     <td className="table-cell hidden sm:table-cell">{item.category ?? '—'}</td>
+                    <td className="table-cell hidden md:table-cell">{item.supplier ?? '—'}</td>
+                    <td className="table-cell hidden lg:table-cell">{item.batch ?? '—'}</td>
                     <td className="table-cell hidden sm:table-cell">{item.unit ?? '—'}</td>
                     <td className="table-cell hidden md:table-cell">{item.minStock ?? '—'}</td>
                     <td className="table-cell">
@@ -198,36 +208,63 @@ export default function Items() {
       {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="card p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-4">{editing ? 'Edit Item' : 'Add Item'}</h2>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-              <div>
-                <label className="label">SKU *</label>
-                <input {...register('sku')} className="input" />
-                {errors.sku && <p className="mt-1 text-xs text-red-600">{errors.sku.message}</p>}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">SKU *</label>
+                  <input {...register('sku')} className="input" disabled={!!editing} />
+                  {errors.sku && <p className="mt-1 text-xs text-red-600">{errors.sku.message}</p>}
+                </div>
+                <div>
+                  <label className="label">Name *</label>
+                  <input {...register('name')} className="input" />
+                  {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+                </div>
               </div>
               <div>
-                <label className="label">Name *</label>
-                <input {...register('name')} className="input" />
-                {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
+                <label className="label">Category</label>
+                <select {...register('category')} className="input">
+                  <option value="">— select —</option>
+                  {[
+                    'Playing Cards',
+                    'Casino Chips',
+                    'Dice',
+                    'Roulette Equipment',
+                    'Slot Machine Parts',
+                    'Table Felt',
+                    'Shuffling Machines',
+                    'Security Equipment',
+                    'Other Equipment',
+                  ].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="label">Category</label>
-                  <input {...register('category')} className="input" />
+                  <label className="label">Supplier</label>
+                  <input {...register('supplier')} className="input" placeholder="Supplier name" />
                 </div>
                 <div>
-                  <label className="label">Unit</label>
-                  <input {...register('unit')} className="input" placeholder="pcs, kg…" />
+                  <label className="label">Batch / Lot #</label>
+                  <input {...register('batch')} className="input" placeholder="e.g. LOT-2024-01" />
                 </div>
               </div>
-              <div>
-                <label className="label">Min Stock</label>
-                <input {...register('minStock')} type="number" min="0" className="input" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Unit</label>
+                  <input {...register('unit')} className="input" placeholder="pcs, decks, sets…" />
+                </div>
+                <div>
+                  <label className="label">Min Stock Alert</label>
+                  <input {...register('minStock')} type="number" min="0" className="input" />
+                </div>
               </div>
               <div>
                 <label className="label">Description</label>
-                <textarea {...register('description')} rows={2} className="input" />
+                <textarea {...register('description')} rows={2} className="input" placeholder="Optional notes about this item…" />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" className="btn-secondary" onClick={closeModal}>

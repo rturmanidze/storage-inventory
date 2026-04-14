@@ -11,7 +11,19 @@ export class CreateItemDto {
 
   @IsString()
   @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
   category?: string;
+
+  @IsString()
+  @IsOptional()
+  supplier?: string;
+
+  @IsString()
+  @IsOptional()
+  batch?: string;
 
   @IsString()
   @IsOptional()
@@ -30,7 +42,19 @@ export class UpdateItemDto {
 
   @IsString()
   @IsOptional()
+  description?: string;
+
+  @IsString()
+  @IsOptional()
   category?: string;
+
+  @IsString()
+  @IsOptional()
+  supplier?: string;
+
+  @IsString()
+  @IsOptional()
+  batch?: string;
 
   @IsString()
   @IsOptional()
