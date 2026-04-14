@@ -80,8 +80,8 @@ This will:
 
 | URL | Description |
 |-----|-------------|
-| `http://localhost:10080` | Web UI (same machine) |
-| `http://<server-ip>:10080` | Web UI (other LAN devices) |
+| `http://localhost:8080` | Web UI (same machine) |
+| `http://<server-ip>:8080` | Web UI (other LAN devices) |
 | `http://localhost:3000/api` | REST API |
 
 ### 5. Default credentials
