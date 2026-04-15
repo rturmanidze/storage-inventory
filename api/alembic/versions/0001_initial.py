@@ -19,10 +19,30 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # --- enum types ---
-    op.execute("CREATE TYPE IF NOT EXISTS \"Role\" AS ENUM ('ADMIN', 'MANAGER', 'VIEWER')")
-    op.execute("CREATE TYPE IF NOT EXISTS \"UnitStatus\" AS ENUM ('IN_STOCK', 'ISSUED', 'QUARANTINED', 'SCRAPPED')")
-    op.execute("CREATE TYPE IF NOT EXISTS \"MovementType\" AS ENUM ('RECEIVE', 'TRANSFER', 'ISSUE', 'RETURN', 'ADJUST')")
-    op.execute("CREATE TYPE IF NOT EXISTS \"IssuedToType\" AS ENUM ('PERSON', 'DEPARTMENT', 'CUSTOMER')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "Role" AS ENUM ('ADMIN', 'MANAGER', 'VIEWER');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "UnitStatus" AS ENUM ('IN_STOCK', 'ISSUED', 'QUARANTINED', 'SCRAPPED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "MovementType" AS ENUM ('RECEIVE', 'TRANSFER', 'ISSUE', 'RETURN', 'ADJUST');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "IssuedToType" AS ENUM ('PERSON', 'DEPARTMENT', 'CUSTOMER');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # --- User ---
     op.create_table(
