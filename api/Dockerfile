@@ -1,19 +1,14 @@
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-COPY prisma ./prisma/
-RUN npm ci
-RUN npx prisma generate
-COPY . .
-RUN npm run build
+FROM python:3.12-slim
 
-FROM node:20-alpine
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/prisma ./prisma
-COPY package*.json ./
-COPY entrypoint.sh ./
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
 RUN chmod +x entrypoint.sh
+
 EXPOSE 3000
+
 ENTRYPOINT ["./entrypoint.sh"]
