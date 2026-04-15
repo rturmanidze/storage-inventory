@@ -52,6 +52,7 @@ def get_item(
 
 
 @router.put("/{item_id}", response_model=ItemOut)
+@router.patch("/{item_id}", response_model=ItemOut)
 def update_item(
     item_id: int,
     body: ItemUpdate,

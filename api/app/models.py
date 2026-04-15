@@ -64,7 +64,9 @@ class Warehouse(Base):
     __tablename__ = "Warehouse"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String, unique=True, nullable=False)
     name = Column(String, unique=True, nullable=False)
+    address = Column(Text, nullable=True)
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     updatedAt = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

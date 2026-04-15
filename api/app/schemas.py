@@ -38,11 +38,15 @@ class TokenResponse(BaseModel):
 # ── Warehouse ──────────────────────────────────────────────────────────────────
 
 class WarehouseCreate(BaseModel):
+    code: str
     name: str
+    address: Optional[str] = None
 
 
 class WarehouseUpdate(BaseModel):
+    code: Optional[str] = None
     name: Optional[str] = None
+    address: Optional[str] = None
 
 
 class LocationOut(OrmBase):
@@ -56,7 +60,9 @@ class LocationOut(OrmBase):
 
 class WarehouseOut(OrmBase):
     id: int
+    code: str
     name: str
+    address: Optional[str] = None
     createdAt: datetime
     updatedAt: datetime
     locations: List[LocationOut] = []
