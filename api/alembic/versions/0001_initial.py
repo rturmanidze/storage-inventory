@@ -19,10 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # --- enum types ---
-    op.execute("CREATE TYPE \"Role\" AS ENUM ('ADMIN', 'MANAGER', 'VIEWER')")
-    op.execute("CREATE TYPE \"UnitStatus\" AS ENUM ('IN_STOCK', 'ISSUED', 'QUARANTINED', 'SCRAPPED')")
-    op.execute("CREATE TYPE \"MovementType\" AS ENUM ('RECEIVE', 'TRANSFER', 'ISSUE', 'RETURN', 'ADJUST')")
-    op.execute("CREATE TYPE \"IssuedToType\" AS ENUM ('PERSON', 'DEPARTMENT', 'CUSTOMER')")
+    op.execute("CREATE TYPE IF NOT EXISTS \"Role\" AS ENUM ('ADMIN', 'MANAGER', 'VIEWER')")
+    op.execute("CREATE TYPE IF NOT EXISTS \"UnitStatus\" AS ENUM ('IN_STOCK', 'ISSUED', 'QUARANTINED', 'SCRAPPED')")
+    op.execute("CREATE TYPE IF NOT EXISTS \"MovementType\" AS ENUM ('RECEIVE', 'TRANSFER', 'ISSUE', 'RETURN', 'ADJUST')")
+    op.execute("CREATE TYPE IF NOT EXISTS \"IssuedToType\" AS ENUM ('PERSON', 'DEPARTMENT', 'CUSTOMER')")
 
     # --- User ---
     op.create_table(
