@@ -1,0 +1,285 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional, List
+
+from pydantic import BaseModel, ConfigDict
+
+from app.models import IssuedToType, MovementType, Role, UnitStatus
+
+
+# ── Shared config ──────────────────────────────────────────────────────────────
+
+class OrmBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Auth ───────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class UserOut(OrmBase):
+    id: int
+    username: str
+    email: str
+    role: Role
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    user: UserOut
+
+
+# ── Warehouse ──────────────────────────────────────────────────────────────────
+
+class WarehouseCreate(BaseModel):
+    name: str
+
+
+class WarehouseUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class LocationOut(OrmBase):
+    id: int
+    warehouseId: int
+    code: str
+    description: Optional[str] = None
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class WarehouseOut(OrmBase):
+    id: int
+    name: str
+    createdAt: datetime
+    updatedAt: datetime
+    locations: List[LocationOut] = []
+
+
+# ── Location ───────────────────────────────────────────────────────────────────
+
+class LocationCreate(BaseModel):
+    code: str
+    description: Optional[str] = None
+
+
+class LocationUpdate(BaseModel):
+    code: Optional[str] = None
+    description: Optional[str] = None
+
+
+class LocationWithWarehouseOut(OrmBase):
+    id: int
+    warehouseId: int
+    code: str
+    description: Optional[str] = None
+    createdAt: datetime
+    updatedAt: datetime
+    warehouse: Optional[WarehouseOut] = None
+
+
+# ── Item ───────────────────────────────────────────────────────────────────────
+
+class ItemCreate(BaseModel):
+    sku: str
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    supplier: Optional[str] = None
+    batch: Optional[str] = None
+    unit: Optional[str] = "pcs"
+    minStock: Optional[int] = 0
+
+
+class ItemUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    supplier: Optional[str] = None
+    batch: Optional[str] = None
+    unit: Optional[str] = None
+    minStock: Optional[int] = None
+
+
+class BarcodeOut(OrmBase):
+    id: int
+    itemId: int
+    value: str
+    createdAt: datetime
+
+
+class BarcodeCreate(BaseModel):
+    value: str
+
+
+class ItemOut(OrmBase):
+    id: int
+    sku: str
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    supplier: Optional[str] = None
+    batch: Optional[str] = None
+    unit: str
+    minStock: int
+    createdAt: datetime
+    updatedAt: datetime
+    barcodes: List[BarcodeOut] = []
+
+
+# ── Unit ───────────────────────────────────────────────────────────────────────
+
+class UnitCreate(BaseModel):
+    itemId: int
+    serial: str
+    currentLocationId: Optional[int] = None
+
+
+class UnitOut(OrmBase):
+    id: int
+    itemId: int
+    serial: str
+    status: UnitStatus
+    currentLocationId: Optional[int] = None
+    createdAt: datetime
+    updatedAt: datetime
+    item: Optional[ItemOut] = None
+    currentLocation: Optional[LocationWithWarehouseOut] = None
+
+
+# ── IssuedTo ───────────────────────────────────────────────────────────────────
+
+class IssuedToCreate(BaseModel):
+    name: str
+    type: Optional[IssuedToType] = IssuedToType.PERSON
+
+
+class IssuedToUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[IssuedToType] = None
+
+
+class IssuedToOut(OrmBase):
+    id: int
+    name: str
+    type: IssuedToType
+    createdAt: datetime
+    updatedAt: datetime
+
+
+# ── Movements ─────────────────────────────────────────────────────────────────
+
+class ReceiveLine(BaseModel):
+    serial: str
+    toLocationId: int
+
+
+class ReceiveMovementRequest(BaseModel):
+    note: Optional[str] = None
+    itemId: int
+    lines: List[ReceiveLine]
+
+
+class TransferLine(BaseModel):
+    serial: str
+    toLocationId: int
+
+
+class TransferMovementRequest(BaseModel):
+    note: Optional[str] = None
+    lines: List[TransferLine]
+
+
+class IssueLine(BaseModel):
+    serial: str
+
+
+class IssueMovementRequest(BaseModel):
+    note: Optional[str] = None
+    issuedToId: int
+    lines: List[IssueLine]
+
+
+class ReturnLine(BaseModel):
+    serial: str
+    toLocationId: int
+
+
+class ReturnMovementRequest(BaseModel):
+    note: Optional[str] = None
+    lines: List[ReturnLine]
+
+
+class MovementLineOut(OrmBase):
+    id: int
+    movementId: int
+    serialUnitId: int
+    fromLocationId: Optional[int] = None
+    toLocationId: Optional[int] = None
+    issuedToId: Optional[int] = None
+    serialUnit: Optional[UnitOut] = None
+    fromLocation: Optional[LocationOut] = None
+    toLocation: Optional[LocationOut] = None
+    issuedTo: Optional[IssuedToOut] = None
+
+
+class MovementCreatedByOut(OrmBase):
+    id: int
+    username: str
+    email: str
+    role: Role
+
+
+class MovementOut(OrmBase):
+    id: int
+    type: MovementType
+    note: Optional[str] = None
+    createdAt: datetime
+    createdById: int
+    createdBy: Optional[MovementCreatedByOut] = None
+    lines: List[MovementLineOut] = []
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+class LowStockItem(BaseModel):
+    id: int
+    sku: str
+    name: str
+    category: Optional[str] = None
+    inStockCount: int
+    minStock: int
+
+
+class RecentMovement(BaseModel):
+    id: int
+    type: MovementType
+    note: Optional[str] = None
+    createdAt: datetime
+    createdBy: MovementCreatedByOut
+    linesCount: int
+
+
+class DashboardStats(BaseModel):
+    totalUnits: int
+    statusBreakdown: dict
+    lowStockItems: List[LowStockItem]
+    recentMovements: List[RecentMovement]
+
+
+# ── Import ────────────────────────────────────────────────────────────────────
+
+class ImportError(BaseModel):
+    row: int
+    message: str
+
+
+class ImportResult(BaseModel):
+    success: int
+    errors: List[ImportError]
