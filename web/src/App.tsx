@@ -11,6 +11,7 @@ import Warehouses from './pages/Warehouses'
 import Locations from './pages/Locations'
 import IssuedTo from './pages/IssuedTo'
 import Units from './pages/Units'
+import Users from './pages/Users'
 import Receive from './pages/movements/Receive'
 import Transfer from './pages/movements/Transfer'
 import Issue from './pages/movements/Issue'
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/warehouses/:id/locations" element={<Locations />} />
               <Route path="/issued-to" element={<IssuedTo />} />
               <Route path="/units" element={<Units />} />
+              <Route path="/users" element={<Users />} />
               <Route path="/movements/receive" element={<Receive />} />
               <Route path="/movements/transfer" element={<Transfer />} />
               <Route path="/movements/issue" element={<Issue />} />

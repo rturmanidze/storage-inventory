@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 interface NavItem {
   label: string
   to: string
+  adminOnly?: boolean
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -24,12 +25,15 @@ const navItems: NavItem[] = [
   { label: '↗ Issue Items', to: '/movements/issue' },
   { label: '↙ Return Items', to: '/movements/return' },
   { label: '⬆ Import', to: '/import' },
+  { label: '👥 Users', to: '/users', adminOnly: true },
 ]
 
 export default function Layout() {
   const { user, logout } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const roleLabel = ROLE_LABELS[user?.role ?? ''] ?? user?.role ?? ''
+
+  const visibleNav = navItems.filter(item => !item.adminOnly || user?.role === 'ADMIN')
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -56,7 +60,7 @@ export default function Layout() {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-4 space-y-0.5 px-2">
-          {navItems.map(item => (
+          {visibleNav.map(item => (
             <NavLink
               key={item.to}
               to={item.to}

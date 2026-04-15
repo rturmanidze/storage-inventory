@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, dashboard, import_data, issued_to, items, locations, movements, scan, units, warehouses
+from app.routers import auth, dashboard, import_data, issued_to, items, locations, movements, scan, units, users, warehouses
 
 app = FastAPI(title="Storage Inventory API")
 
@@ -24,6 +24,7 @@ _routers = [
     dashboard.router,
     scan.router,
     import_data.router,
+    users.router,
 ]
 
 for router in _routers:

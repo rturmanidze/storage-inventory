@@ -35,6 +35,19 @@ class TokenResponse(BaseModel):
     user: UserOut
 
 
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str
+    role: Role = Role.VIEWER
+
+
+class UserUpdate(BaseModel):
+    email: Optional[str] = None
+    role: Optional[Role] = None
+    password: Optional[str] = None
+
+
 # ── Warehouse ──────────────────────────────────────────────────────────────────
 
 class WarehouseCreate(BaseModel):
