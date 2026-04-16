@@ -262,8 +262,8 @@ export default function Users() {
                 className="space-y-3"
               >
                 <div>
-                  <label className="label">Email</label>
-                  <input {...editForm.register('email')} className="input" />
+                  <label className="label" htmlFor="edit-email">Email</label>
+                  <input {...editForm.register('email')} id="edit-email" className="input" />
                   {editForm.formState.errors.email && (
                     <p className="mt-1 text-xs text-red-600">
                       {editForm.formState.errors.email.message}
@@ -271,8 +271,8 @@ export default function Users() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Role</label>
-                  <select {...editForm.register('role')} className="input">
+                  <label className="label" htmlFor="edit-role">Role</label>
+                  <select {...editForm.register('role')} id="edit-role" className="input">
                     {ROLES.map(r => (
                       <option key={r} value={r}>
                         {ROLE_LABELS[r]}
@@ -281,12 +281,13 @@ export default function Users() {
                   </select>
                 </div>
                 <div>
-                  <label className="label">
+                  <label className="label" htmlFor="edit-password">
                     New Password{' '}
                     <span className="text-gray-400">(leave blank to keep)</span>
                   </label>
                   <input
                     {...editForm.register('password')}
+                    id="edit-password"
                     type="password"
                     className="input"
                     placeholder="••••••••"
@@ -316,8 +317,8 @@ export default function Users() {
                 className="space-y-3"
               >
                 <div>
-                  <label className="label">Username *</label>
-                  <input {...createForm.register('username')} className="input" />
+                  <label className="label" htmlFor="create-username">Username *</label>
+                  <input {...createForm.register('username')} id="create-username" className="input" />
                   {createForm.formState.errors.username && (
                     <p className="mt-1 text-xs text-red-600">
                       {createForm.formState.errors.username.message}
@@ -325,8 +326,8 @@ export default function Users() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Email *</label>
-                  <input {...createForm.register('email')} type="email" className="input" />
+                  <label className="label" htmlFor="create-email">Email *</label>
+                  <input {...createForm.register('email')} id="create-email" type="email" className="input" />
                   {createForm.formState.errors.email && (
                     <p className="mt-1 text-xs text-red-600">
                       {createForm.formState.errors.email.message}
@@ -334,9 +335,10 @@ export default function Users() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Password *</label>
+                  <label className="label" htmlFor="create-password">Password *</label>
                   <input
                     {...createForm.register('password')}
+                    id="create-password"
                     type="password"
                     className="input"
                     placeholder="••••••••"
@@ -348,8 +350,8 @@ export default function Users() {
                   )}
                 </div>
                 <div>
-                  <label className="label">Role</label>
-                  <select {...createForm.register('role')} className="input">
+                  <label className="label" htmlFor="create-role">Role</label>
+                  <select {...createForm.register('role')} id="create-role" className="input">
                     {ROLES.map(r => (
                       <option key={r} value={r}>
                         {ROLE_LABELS[r]}
@@ -387,9 +389,10 @@ export default function Users() {
               className="space-y-3"
             >
               <div>
-                <label className="label">Current Password</label>
+                <label className="label" htmlFor="cp-current">Current Password</label>
                 <input
                   {...changePwForm.register('currentPassword')}
+                  id="cp-current"
                   type="password"
                   className="input"
                   placeholder="••••••••"
@@ -401,9 +404,10 @@ export default function Users() {
                 )}
               </div>
               <div>
-                <label className="label">New Password</label>
+                <label className="label" htmlFor="cp-new">New Password</label>
                 <input
                   {...changePwForm.register('newPassword')}
+                  id="cp-new"
                   type="password"
                   className="input"
                   placeholder="••••••••"
@@ -415,9 +419,10 @@ export default function Users() {
                 )}
               </div>
               <div>
-                <label className="label">Confirm New Password</label>
+                <label className="label" htmlFor="cp-confirm">Confirm New Password</label>
                 <input
                   {...changePwForm.register('confirmPassword')}
+                  id="cp-confirm"
                   type="password"
                   className="input"
                   placeholder="••••••••"

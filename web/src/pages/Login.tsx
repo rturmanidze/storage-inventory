@@ -47,9 +47,10 @@ export default function Login() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label className="label">Username</label>
+            <label className="label" htmlFor="username">Username</label>
             <input
               {...register('username')}
+              id="username"
               type="text"
               autoComplete="username"
               className="input"
@@ -61,9 +62,10 @@ export default function Login() {
           </div>
 
           <div>
-            <label className="label">Password</label>
+            <label className="label" htmlFor="password">Password</label>
             <input
               {...register('password')}
+              id="password"
               type="password"
               autoComplete="current-password"
               className="input"
