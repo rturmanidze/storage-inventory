@@ -22,12 +22,7 @@ def get_stats(
         .group_by(SerializedUnit.status)
         .all()
     )
-    status_breakdown = {
-        "IN_STOCK": 0,
-        "ISSUED": 0,
-        "QUARANTINED": 0,
-        "SCRAPPED": 0,
-    }
+    status_breakdown = {s.value: 0 for s in UnitStatus}
     for row_status, count in status_rows:
         status_breakdown[row_status.value] = count
 

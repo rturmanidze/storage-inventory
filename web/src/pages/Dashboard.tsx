@@ -1,13 +1,19 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
+import { useWebSocket } from '../contexts/WebSocketContext'
 
 interface StatusBreakdown {
   IN_STOCK: number
   ISSUED: number
   QUARANTINED: number
   SCRAPPED: number
+  DAMAGED: number
+  EXPIRED: number
+  DESTROYED: number
 }
 
 interface LowStockItem {
@@ -38,8 +44,11 @@ interface DashboardStats {
 const STATUS_LABELS: Record<string, string> = {
   IN_STOCK: 'Active',
   ISSUED: 'In Use',
-  QUARANTINED: 'Damaged',
-  SCRAPPED: 'Removed',
+  QUARANTINED: 'Quarantined',
+  SCRAPPED: 'Scrapped',
+  DAMAGED: 'Damaged',
+  EXPIRED: 'Expired',
+  DESTROYED: 'Destroyed',
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -47,6 +56,9 @@ const STATUS_COLORS: Record<string, string> = {
   ISSUED: 'bg-blue-100 text-blue-800',
   QUARANTINED: 'bg-amber-100 text-amber-800',
   SCRAPPED: 'bg-red-100 text-red-800',
+  DAMAGED: 'bg-orange-100 text-orange-800',
+  EXPIRED: 'bg-purple-100 text-purple-800',
+  DESTROYED: 'bg-red-100 text-red-900',
 }
 
 const STATUS_BAR_COLORS: Record<string, string> = {
@@ -54,6 +66,9 @@ const STATUS_BAR_COLORS: Record<string, string> = {
   ISSUED: 'bg-blue-500',
   QUARANTINED: 'bg-amber-500',
   SCRAPPED: 'bg-red-500',
+  DAMAGED: 'bg-orange-500',
+  EXPIRED: 'bg-purple-400',
+  DESTROYED: 'bg-red-700',
 }
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
@@ -101,6 +116,8 @@ function MetricCard({
 export default function Dashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { subscribe } = useWebSocket()
 
   const { data: stats, isLoading } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
@@ -108,12 +125,28 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   })
 
+  // Refresh dashboard stats on any inventory or movement event
+  useEffect(() => {
+    return subscribe((msg) => {
+      if (msg.event === 'inventory_update' || msg.event === 'movement_created') {
+        queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      }
+      if (msg.event === 'low_stock_alert') {
+        const item = msg as { event: string; name?: string; sku?: string; inStock?: number; minStock?: number }
+        toast(`⚠️ Low stock: ${item.name ?? item.sku} (${item.inStock}/${item.minStock})`, {
+          duration: 6000,
+          style: { background: '#fef3c7', color: '#92400e' },
+        })
+      }
+    })
+  }, [subscribe, queryClient])
+
   const total = stats?.totalUnits ?? 0
-  const breakdown = stats?.statusBreakdown ?? { IN_STOCK: 0, ISSUED: 0, QUARANTINED: 0, SCRAPPED: 0 }
-  const inStock = breakdown.IN_STOCK
-  const inUse = breakdown.ISSUED
-  const damaged = breakdown.QUARANTINED
-  const removed = breakdown.SCRAPPED
+  const breakdown = stats?.statusBreakdown ?? {} as StatusBreakdown
+  const inStock = breakdown.IN_STOCK ?? 0
+  const inUse = breakdown.ISSUED ?? 0
+  const damaged = (breakdown.QUARANTINED ?? 0) + (breakdown.DAMAGED ?? 0)
+  const removed = (breakdown.SCRAPPED ?? 0) + (breakdown.DESTROYED ?? 0)
 
   return (
     <div className="space-y-6">

@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import NotificationBell from './NotificationBell'
 
 interface NavItem {
   label: string
   to: string
   adminOnly?: boolean
+  managerOrAdmin?: boolean
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -25,7 +27,9 @@ const navItems: NavItem[] = [
   { label: '↗ Issue Items', to: '/movements/issue' },
   { label: '↙ Return Items', to: '/movements/return' },
   { label: '⬆ Import', to: '/import' },
-  { label: '👥 Users', to: '/users' },
+  { label: '📊 Reports', to: '/reports', managerOrAdmin: true },
+  { label: '🔒 Audit Log', to: '/audit', managerOrAdmin: true },
+  { label: '👥 Users', to: '/users', adminOnly: true },
 ]
 
 export default function Layout() {
@@ -33,7 +37,11 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const roleLabel = ROLE_LABELS[user?.role ?? ''] ?? user?.role ?? ''
 
-  const visibleNav = navItems.filter(item => !item.adminOnly || user?.role === 'ADMIN')
+  const visibleNav = navItems.filter(item => {
+    if (item.adminOnly) return user?.role === 'ADMIN'
+    if (item.managerOrAdmin) return user?.role === 'ADMIN' || user?.role === 'MANAGER'
+    return true
+  })
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -102,6 +110,7 @@ export default function Layout() {
           </button>
           <div className="flex-1" />
           <div className="flex items-center gap-3 text-sm text-gray-600">
+            <NotificationBell />
             <span className="hidden sm:inline">{user?.username}</span>
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
               {roleLabel}
@@ -120,3 +129,4 @@ export default function Layout() {
     </div>
   )
 }
+
