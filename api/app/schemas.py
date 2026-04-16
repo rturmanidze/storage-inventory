@@ -177,6 +177,37 @@ class UnitOut(OrmBase):
     currentLocation: Optional[LocationWithWarehouseOut] = None
 
 
+class UnitStatusUpdate(BaseModel):
+    status: UnitStatus
+    reason: Optional[str] = None
+
+
+class DestroyUnitRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class DestructionRecordOut(OrmBase):
+    id: int
+    unitId: int
+    destroyedById: Optional[int] = None
+    reason: str
+    destroyedAt: datetime
+    destroyedBy: Optional[UserOut] = None
+
+
+class UnitWithDestructionOut(OrmBase):
+    id: int
+    itemId: int
+    serial: str
+    status: UnitStatus
+    currentLocationId: Optional[int] = None
+    createdAt: datetime
+    updatedAt: datetime
+    item: Optional[ItemOut] = None
+    currentLocation: Optional[LocationWithWarehouseOut] = None
+    destructionRecord: Optional[DestructionRecordOut] = None
+
+
 # ── IssuedTo ───────────────────────────────────────────────────────────────────
 
 class IssuedToCreate(BaseModel):
@@ -270,6 +301,19 @@ class MovementOut(OrmBase):
     lines: List[MovementLineOut] = []
 
 
+# ── Unit History ──────────────────────────────────────────────────────────────
+
+class UnitHistoryEvent(BaseModel):
+    eventType: str
+    timestamp: datetime
+    performedBy: Optional[str] = None
+    detail: str
+    movementId: Optional[int] = None
+    fromLocation: Optional[str] = None
+    toLocation: Optional[str] = None
+    issuedTo: Optional[str] = None
+
+
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 class LowStockItem(BaseModel):
@@ -297,6 +341,32 @@ class DashboardStats(BaseModel):
     recentMovements: List[RecentMovement]
 
 
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+
+class AuditLogOut(OrmBase):
+    id: int
+    userId: Optional[int] = None
+    action: str
+    resourceType: Optional[str] = None
+    resourceId: Optional[str] = None
+    detail: Optional[str] = None
+    ipAddress: Optional[str] = None
+    createdAt: datetime
+    user: Optional[UserOut] = None
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+class NotificationOut(OrmBase):
+    id: int
+    userId: int
+    type: str
+    title: str
+    message: str
+    isRead: bool
+    createdAt: datetime
+
+
 # ── Import ────────────────────────────────────────────────────────────────────
 
 class ImportError(BaseModel):
@@ -307,3 +377,4 @@ class ImportError(BaseModel):
 class ImportResult(BaseModel):
     success: int
     errors: List[ImportError]
+

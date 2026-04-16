@@ -63,7 +63,14 @@ def get_current_user(
     return user
 
 
-def require_roles(*roles: Role):
+def decode_token(token: str) -> Optional[dict]:
+    """Decode a JWT and return the payload, or None if invalid."""
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+
     def checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
             raise HTTPException(

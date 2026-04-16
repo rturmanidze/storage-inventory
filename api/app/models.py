@@ -2,6 +2,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Integer,
     String,
@@ -30,6 +31,9 @@ class UnitStatus(str, enum.Enum):
     ISSUED = "ISSUED"
     QUARANTINED = "QUARANTINED"
     SCRAPPED = "SCRAPPED"
+    DAMAGED = "DAMAGED"
+    EXPIRED = "EXPIRED"
+    DESTROYED = "DESTROYED"
 
 
 class MovementType(str, enum.Enum):
@@ -203,3 +207,55 @@ class MovementLine(Base):
         back_populates="toLines",
     )
     issuedTo = relationship("IssuedTo", back_populates="movementLines")
+
+
+class AuditLog(Base):
+    __tablename__ = "AuditLog"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String, nullable=False)
+    resourceType = Column(String, nullable=True)
+    resourceId = Column(String, nullable=True)
+    detail = Column(Text, nullable=True)
+    ipAddress = Column(String, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[userId])
+
+    __table_args__ = (
+        Index("AuditLog_userId_idx", "userId"),
+        Index("AuditLog_createdAt_idx", "createdAt"),
+        Index("AuditLog_action_idx", "action"),
+    )
+
+
+class DestructionRecord(Base):
+    __tablename__ = "DestructionRecord"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    unitId = Column(Integer, ForeignKey("SerializedUnit.id"), nullable=False)
+    destroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    reason = Column(Text, nullable=False)
+    destroyedAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    unit = relationship("SerializedUnit")
+    destroyedBy = relationship("User")
+
+    __table_args__ = (Index("DestructionRecord_unitId_idx", "unitId"),)
+
+
+class Notification(Base):
+    __tablename__ = "Notification"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    isRead = Column(Boolean, nullable=False, default=False)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User")
+
+    __table_args__ = (Index("Notification_userId_idx", "userId"),)
