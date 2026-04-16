@@ -80,9 +80,13 @@ This will:
 
 | URL | Description |
 |-----|-------------|
-| `http://localhost:8080` | Web UI (same machine) |
-| `http://<server-ip>:8080` | Web UI (other LAN devices) |
-| `http://localhost:3000/api` | REST API |
+| `https://localhost:8085` | Web UI (same machine) |
+| `https://<server-ip>:8085` | Web UI (other LAN devices) |
+| `https://localhost:3010/api` | REST API |
+
+> **Self-signed certificate warning:** Your browser will show a security warning on first visit
+> because the SSL certificate is self-signed. Click **Advanced → Proceed** (Chrome) or
+> **Accept the Risk** (Firefox) to continue. This is expected for local/LAN deployments.
 
 ### 5. Default credentials
 
@@ -182,5 +186,5 @@ npm install
 npm run dev
 ```
 
-The Vite dev server proxies `/api` to `http://localhost:3000`.
+The Vite dev server proxies `/api` to `http://localhost:3010`.
 
