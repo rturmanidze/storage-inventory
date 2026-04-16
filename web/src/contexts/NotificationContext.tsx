@@ -5,6 +5,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import api from '../api/client'
 import { useWebSocket } from './WebSocketContext'
+import { useAuth } from './AuthContext'
 
 export interface Notification {
   id: number
@@ -28,17 +29,22 @@ const NotificationContext = createContext<NotificationContextType | null>(null)
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const { subscribe } = useWebSocket()
+  const { token } = useAuth()
 
   const refresh = useCallback(async () => {
+    if (!token) {
+      setNotifications([])
+      return
+    }
     try {
       const res = await api.get<Notification[]>('/notifications')
       setNotifications(res.data)
     } catch {
       // ignore auth errors (e.g. during logout)
     }
-  }, [])
+  }, [token])
 
-  // Initial load
+  // Initial load & re-fetch when auth state changes
   useEffect(() => {
     refresh()
   }, [refresh])
