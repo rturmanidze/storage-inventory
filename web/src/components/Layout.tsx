@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   { label: '↗ Issue Items', to: '/movements/issue' },
   { label: '↙ Return Items', to: '/movements/return' },
   { label: '⬆ Import', to: '/import' },
-  { label: '👥 Users', to: '/users', adminOnly: true },
+  { label: '👥 Users', to: '/users' },
 ]
 
 export default function Layout() {

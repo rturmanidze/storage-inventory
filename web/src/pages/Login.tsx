@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -14,6 +14,7 @@ type FormData = z.infer<typeof schema>
 
 export default function Login() {
   const { login, user } = useAuth()
+  const navigate = useNavigate()
 
   const {
     register,
@@ -28,9 +29,10 @@ export default function Login() {
   async function onSubmit(data: FormData) {
     try {
       await login(data.username, data.password)
-      // Navigation is handled declaratively above via the `user` state check
-    } catch {
-      toast.error('Invalid username or password')
+      navigate('/dashboard', { replace: true })
+    } catch (err: any) {
+      const message = err?.response?.data?.detail ?? 'Invalid username or password'
+      toast.error(message)
     }
   }
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import IssuedToType, MovementType, Role, UnitStatus
 
@@ -46,6 +46,11 @@ class UserUpdate(BaseModel):
     email: Optional[str] = None
     role: Optional[Role] = None
     password: Optional[str] = None
+
+
+class UserSelfPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6)
 
 
 # ── Warehouse ──────────────────────────────────────────────────────────────────

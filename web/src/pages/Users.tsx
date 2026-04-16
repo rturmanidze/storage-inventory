@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
 import api from '../api/client'
+import { useAuth } from '../contexts/AuthContext'
 
 const ROLES = ['ADMIN', 'MANAGER', 'VIEWER'] as const
 type Role = (typeof ROLES)[number]
@@ -15,7 +16,7 @@ const ROLE_LABELS: Record<Role, string> = {
   VIEWER: 'Operations Manager',
 }
 
-interface User {
+interface UserRecord {
   id: number
   username: string
   email: string
@@ -37,15 +38,31 @@ const editSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters').optional().or(z.literal('')),
 })
 
+const changePwSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required'),
+    newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+    confirmPassword: z.string().min(1, 'Please confirm your new password'),
+  })
+  .refine(d => d.newPassword === d.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  })
+
 type CreateForm = z.infer<typeof createSchema>
 type EditForm = z.infer<typeof editSchema>
+type ChangePwForm = z.infer<typeof changePwSchema>
 
 export default function Users() {
   const qc = useQueryClient()
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<User | null>(null)
+  const { user: currentUser } = useAuth()
+  const isAdmin = currentUser?.role === 'ADMIN'
 
-  const { data: users = [], isLoading } = useQuery<User[]>({
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState<UserRecord | null>(null)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+
+  const { data: users = [], isLoading } = useQuery<UserRecord[]>({
     queryKey: ['users'],
     queryFn: () => api.get('/users').then(r => r.data),
   })
@@ -57,6 +74,11 @@ export default function Users() {
 
   const editForm = useForm<EditForm>({
     resolver: zodResolver(editSchema),
+  })
+
+  const changePwForm = useForm<ChangePwForm>({
+    resolver: zodResolver(changePwSchema),
+    defaultValues: { currentPassword: '', newPassword: '', confirmPassword: '' },
   })
 
   const createMutation = useMutation({
@@ -96,13 +118,28 @@ export default function Users() {
       toast.error(err?.response?.data?.detail ?? 'Failed to delete user'),
   })
 
+  const changeOwnPasswordMutation = useMutation({
+    mutationFn: (data: ChangePwForm) =>
+      api.patch('/users/me', {
+        current_password: data.currentPassword,
+        new_password: data.newPassword,
+      }),
+    onSuccess: () => {
+      toast.success('Password changed successfully')
+      setChangePasswordOpen(false)
+      changePwForm.reset()
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.detail ?? 'Failed to change password'),
+  })
+
   function openCreate() {
     setEditing(null)
     createForm.reset({ username: '', email: '', password: '', role: 'VIEWER' })
     setModalOpen(true)
   }
 
-  function openEdit(u: User) {
+  function openEdit(u: UserRecord) {
     setEditing(u)
     editForm.reset({ email: u.email, role: u.role, password: '' })
     setModalOpen(true)
@@ -115,13 +152,20 @@ export default function Users() {
     editForm.reset()
   }
 
+  function openChangePassword() {
+    changePwForm.reset()
+    setChangePasswordOpen(true)
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-        <button className="btn-primary" onClick={openCreate}>
-          + Add User
-        </button>
+        {isAdmin && (
+          <button className="btn-primary" onClick={openCreate}>
+            + Add User
+          </button>
+        )}
       </div>
 
       <div className="card overflow-hidden">
@@ -163,23 +207,35 @@ export default function Users() {
                       {new Date(u.createdAt).toLocaleDateString()}
                     </td>
                     <td className="table-cell">
-                      <div className="flex gap-2">
-                        <button
-                          className="btn-secondary btn-sm"
-                          onClick={() => openEdit(u)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="btn-danger btn-sm"
-                          onClick={() => {
-                            if (confirm(`Delete user "${u.username}"?`)) {
-                              deleteMutation.mutate(u.id)
-                            }
-                          }}
-                        >
-                          Delete
-                        </button>
+                      <div className="flex gap-2 flex-wrap">
+                        {u.id === currentUser?.id && (
+                          <button
+                            className="btn-secondary btn-sm"
+                            onClick={openChangePassword}
+                          >
+                            Change Password
+                          </button>
+                        )}
+                        {isAdmin && (
+                          <button
+                            className="btn-secondary btn-sm"
+                            onClick={() => openEdit(u)}
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {isAdmin && u.id !== currentUser?.id && (
+                          <button
+                            className="btn-danger btn-sm"
+                            onClick={() => {
+                              if (confirm(`Delete user "${u.username}"?`)) {
+                                deleteMutation.mutate(u.id)
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -190,6 +246,7 @@ export default function Users() {
         </div>
       </div>
 
+      {/* Create / Edit modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
           <div className="card p-6 w-full max-w-md">
@@ -224,8 +281,16 @@ export default function Users() {
                   </select>
                 </div>
                 <div>
-                  <label className="label">New Password <span className="text-gray-400">(leave blank to keep)</span></label>
-                  <input {...editForm.register('password')} type="password" className="input" placeholder="••••••••" />
+                  <label className="label">
+                    New Password{' '}
+                    <span className="text-gray-400">(leave blank to keep)</span>
+                  </label>
+                  <input
+                    {...editForm.register('password')}
+                    type="password"
+                    className="input"
+                    placeholder="••••••••"
+                  />
                   {editForm.formState.errors.password && (
                     <p className="mt-1 text-xs text-red-600">
                       {editForm.formState.errors.password.message}
@@ -270,7 +335,12 @@ export default function Users() {
                 </div>
                 <div>
                   <label className="label">Password *</label>
-                  <input {...createForm.register('password')} type="password" className="input" placeholder="••••••••" />
+                  <input
+                    {...createForm.register('password')}
+                    type="password"
+                    className="input"
+                    placeholder="••••••••"
+                  />
                   {createForm.formState.errors.password && (
                     <p className="mt-1 text-xs text-red-600">
                       {createForm.formState.errors.password.message}
@@ -301,6 +371,83 @@ export default function Users() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Change Password modal (own account) */}
+      {changePasswordOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="card p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-4">Change Password</h2>
+            <form
+              onSubmit={changePwForm.handleSubmit(d =>
+                changeOwnPasswordMutation.mutate(d),
+              )}
+              className="space-y-3"
+            >
+              <div>
+                <label className="label">Current Password</label>
+                <input
+                  {...changePwForm.register('currentPassword')}
+                  type="password"
+                  className="input"
+                  placeholder="••••••••"
+                />
+                {changePwForm.formState.errors.currentPassword && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {changePwForm.formState.errors.currentPassword.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="label">New Password</label>
+                <input
+                  {...changePwForm.register('newPassword')}
+                  type="password"
+                  className="input"
+                  placeholder="••••••••"
+                />
+                {changePwForm.formState.errors.newPassword && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {changePwForm.formState.errors.newPassword.message}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="label">Confirm New Password</label>
+                <input
+                  {...changePwForm.register('confirmPassword')}
+                  type="password"
+                  className="input"
+                  placeholder="••••••••"
+                />
+                {changePwForm.formState.errors.confirmPassword && (
+                  <p className="mt-1 text-xs text-red-600">
+                    {changePwForm.formState.errors.confirmPassword.message}
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setChangePasswordOpen(false)
+                    changePwForm.reset()
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={changeOwnPasswordMutation.isPending}
+                  className="btn-primary"
+                >
+                  Change Password
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

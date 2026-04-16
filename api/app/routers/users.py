@@ -3,10 +3,10 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth import hash_password, require_roles
+from app.auth import get_current_user, hash_password, require_roles, verify_password
 from app.database import get_db
 from app.models import Role, User
-from app.schemas import UserCreate, UserOut, UserUpdate
+from app.schemas import UserCreate, UserOut, UserSelfPasswordUpdate, UserUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -16,9 +16,25 @@ _admin_only = require_roles(Role.ADMIN)
 @router.get("", response_model=List[UserOut])
 def list_users(
     db: Session = Depends(get_db),
-    _: User = Depends(_admin_only),
+    current: User = Depends(get_current_user),
 ):
-    return db.query(User).order_by(User.id).all()
+    if current.role == Role.ADMIN:
+        return db.query(User).order_by(User.id).all()
+    return [current]
+
+
+@router.patch("/me", response_model=UserOut)
+def change_own_password(
+    body: UserSelfPasswordUpdate,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    if not verify_password(body.current_password, current.passwordHash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    current.passwordHash = hash_password(body.new_password)
+    db.commit()
+    db.refresh(current)
+    return current
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
