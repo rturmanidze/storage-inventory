@@ -71,6 +71,7 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
+def require_roles(*roles: Role):
     def checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in roles:
             raise HTTPException(
