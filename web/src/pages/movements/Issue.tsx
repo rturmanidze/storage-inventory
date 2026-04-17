@@ -52,10 +52,13 @@ export default function Issue() {
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Issue</h1>
+    <div className="max-w-xl mx-auto space-y-5">
+      <div>
+        <h1 className="page-title">Issue Items</h1>
+        <p className="page-subtitle">Issue units to a person, department, or customer</p>
+      </div>
 
-      <form onSubmit={handleSubmit} className="card p-6 space-y-4">
+      <form onSubmit={handleSubmit} className="card p-6 space-y-5">
         {/* Serials */}
         <div>
           <div className="flex items-center justify-between mb-2">
@@ -95,10 +98,12 @@ export default function Issue() {
                 {serials.length > 1 && (
                   <button
                     type="button"
-                    className="btn-danger btn-sm"
+                    className="btn-ghost btn-sm text-red-600 hover:text-red-700 hover:bg-red-50"
                     onClick={() => removeSerial(i)}
                   >
-                    ✕
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 )}
               </div>

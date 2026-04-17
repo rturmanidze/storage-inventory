@@ -127,22 +127,35 @@ export default function Receive() {
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Receive</h1>
+      <div>
+        <h1 className="page-title">Receive Stock</h1>
+        <p className="page-subtitle">Receive new inventory units into the warehouse</p>
+      </div>
 
       {/* Step indicators */}
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-3 text-sm">
         {([1, 2, 3] as Step[]).map(s => (
           <div key={s} className="flex items-center gap-2">
             <span
-              className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold
-                ${step >= s ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-500'}`}
+              className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors
+                ${step >= s ? 'bg-primary-600 text-white shadow-sm' : 'bg-gray-100 text-gray-400'}`}
             >
-              {s}
+              {step > s ? (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                </svg>
+              ) : (
+                s
+              )}
             </span>
-            <span className={step >= s ? 'text-indigo-700 font-medium' : 'text-gray-400'}>
+            <span className={step >= s ? 'text-primary-700 font-medium' : 'text-gray-400'}>
               {s === 1 ? 'Identify Item' : s === 2 ? 'Enter Serials' : 'Confirm'}
             </span>
-            {s < 3 && <span className="text-gray-300">›</span>}
+            {s < 3 && (
+              <svg className="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+            )}
           </div>
         ))}
       </div>
@@ -150,7 +163,7 @@ export default function Receive() {
       {/* Step 1: Barcode scan / item selection */}
       {step === 1 && (
         <div className="card p-6 space-y-4">
-          <h2 className="font-semibold text-gray-700">Step 1: Identify Item</h2>
+          <h2 className="text-sm font-semibold text-gray-700">Step 1: Identify Item</h2>
           <div className="flex gap-2">
             <input
               type="text"
@@ -179,7 +192,7 @@ export default function Receive() {
                 {barcodeCandidates.map(item => (
                   <button
                     key={item.id}
-                    className="w-full text-left p-3 rounded-lg border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                    className="w-full text-left p-3 rounded-xl border border-gray-200 hover:border-primary-400 hover:bg-primary-50 transition-colors"
                     onClick={() => {
                       setSelectedItem(item)
                       setBarcodeCandidates([])
@@ -187,7 +200,7 @@ export default function Receive() {
                     }}
                   >
                     <span className="font-medium">{item.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">{item.sku}</span>
+                    <span className="ml-2 text-xs text-gray-500 font-mono">{item.sku}</span>
                   </button>
                 ))}
               </div>
@@ -195,10 +208,13 @@ export default function Receive() {
           )}
 
           {selectedItem && (
-            <div className="p-3 bg-indigo-50 rounded-lg text-sm">
-              Selected: <strong>{selectedItem.name}</strong> ({selectedItem.sku})
+            <div className="p-3 bg-primary-50 rounded-xl text-sm flex items-center justify-between border border-primary-100">
+              <span>
+                Selected: <strong>{selectedItem.name}</strong>{' '}
+                <span className="text-gray-500 font-mono text-xs">({selectedItem.sku})</span>
+              </span>
               <button
-                className="ml-2 text-indigo-600 hover:underline text-xs"
+                className="text-primary-600 hover:text-primary-700 text-xs font-medium transition-colors"
                 onClick={() => { setSelectedItem(null); setStep(1) }}
               >
                 Change
@@ -219,7 +235,7 @@ export default function Receive() {
       {/* Step 2: Serials + Location */}
       {step === 2 && (
         <div className="card p-6 space-y-4">
-          <h2 className="font-semibold text-gray-700">Step 2: Enter Serials &amp; Location</h2>
+          <h2 className="text-sm font-semibold text-gray-700">Step 2: Enter Serials &amp; Location</h2>
 
           {selectedItem && (
             <p className="text-sm text-gray-600">
@@ -254,10 +270,12 @@ export default function Receive() {
                   {serials.length > 1 && (
                     <button
                       type="button"
-                      className="btn-danger btn-sm"
+                      className="btn-ghost btn-sm text-red-600 hover:text-red-700 hover:bg-red-50"
                       onClick={() => removeSerial(i)}
                     >
-                      ✕
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
                     </button>
                   )}
                 </div>
@@ -302,7 +320,7 @@ export default function Receive() {
             </div>
           )}
 
-          <div className="flex justify-between pt-2">
+          <div className="flex justify-between pt-3 border-t border-gray-100">
             <button className="btn-secondary" onClick={() => setStep(1)}>
               ← Back
             </button>
@@ -320,36 +338,38 @@ export default function Receive() {
       {/* Step 3: Confirm */}
       {step === 3 && (
         <div className="card p-6 space-y-4">
-          <h2 className="font-semibold text-gray-700">Step 3: Confirm Receipt</h2>
+          <h2 className="text-sm font-semibold text-gray-700">Step 3: Confirm Receipt</h2>
 
-          <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+          <div className="bg-surface-tertiary rounded-xl p-4 space-y-2.5 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Item:</span>
-              <span className="font-medium">{selectedItem?.name}</span>
+              <span className="text-gray-500">Item</span>
+              <span className="font-medium text-gray-900">{selectedItem?.name}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Serials:</span>
-              <span className="font-medium">{serials.filter(Boolean).length}</span>
+              <span className="text-gray-500">Serials</span>
+              <span className="font-medium text-gray-900">{serials.filter(Boolean).length} unit(s)</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Location:</span>
-              <span className="font-medium">
+              <span className="text-gray-500">Location</span>
+              <span className="font-medium text-gray-900">
                 {warehouses.find(w => w.id === selectedWarehouseId)?.name} ›{' '}
                 {locations.find(l => l.id === selectedLocationId)?.code}
               </span>
             </div>
           </div>
 
-          <div className="text-sm font-medium text-gray-700">Serials:</div>
-          <ul className="text-sm space-y-1">
-            {serials.filter(Boolean).map(s => (
-              <li key={s} className="font-mono text-gray-800 bg-gray-100 px-2 py-1 rounded">
-                {s}
-              </li>
-            ))}
-          </ul>
+          <div>
+            <p className="section-title mb-2">Serial Numbers</p>
+            <div className="flex flex-wrap gap-1.5">
+              {serials.filter(Boolean).map(s => (
+                <span key={s} className="font-mono text-xs text-gray-700 bg-gray-100 px-2 py-1 rounded-md border border-gray-200">
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
 
-          <div className="flex justify-between pt-2">
+          <div className="flex justify-between pt-3 border-t border-gray-100">
             <button className="btn-secondary" onClick={() => setStep(2)}>
               ← Back
             </button>
@@ -358,7 +378,7 @@ export default function Receive() {
               disabled={receiveMutation.isPending}
               onClick={handleSubmit}
             >
-              {receiveMutation.isPending ? 'Receiving…' : 'Receive'}
+              {receiveMutation.isPending ? 'Receiving…' : 'Confirm & Receive'}
             </button>
           </div>
         </div>
