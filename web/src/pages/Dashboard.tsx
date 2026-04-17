@@ -42,7 +42,7 @@ interface DashboardStats {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  IN_STOCK: 'Active',
+  IN_STOCK: 'In Stock',
   ISSUED: 'In Use',
   QUARANTINED: 'Quarantined',
   SCRAPPED: 'Scrapped',
@@ -51,64 +51,47 @@ const STATUS_LABELS: Record<string, string> = {
   DESTROYED: 'Destroyed',
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  IN_STOCK: 'bg-emerald-100 text-emerald-800',
-  ISSUED: 'bg-blue-100 text-blue-800',
-  QUARANTINED: 'bg-amber-100 text-amber-800',
-  SCRAPPED: 'bg-red-100 text-red-800',
-  DAMAGED: 'bg-orange-100 text-orange-800',
-  EXPIRED: 'bg-purple-100 text-purple-800',
-  DESTROYED: 'bg-red-100 text-red-900',
+const STATUS_COLORS: Record<string, { badge: string; bar: string; dot: string }> = {
+  IN_STOCK: { badge: 'status-in-stock', bar: 'bg-emerald-500', dot: 'bg-emerald-500' },
+  ISSUED: { badge: 'status-issued', bar: 'bg-blue-500', dot: 'bg-blue-500' },
+  QUARANTINED: { badge: 'status-quarantined', bar: 'bg-amber-500', dot: 'bg-amber-500' },
+  SCRAPPED: { badge: 'status-scrapped', bar: 'bg-gray-400', dot: 'bg-gray-400' },
+  DAMAGED: { badge: 'status-damaged', bar: 'bg-orange-500', dot: 'bg-orange-500' },
+  EXPIRED: { badge: 'status-expired', bar: 'bg-purple-400', dot: 'bg-purple-400' },
+  DESTROYED: { badge: 'status-destroyed', bar: 'bg-red-600', dot: 'bg-red-600' },
 }
 
-const STATUS_BAR_COLORS: Record<string, string> = {
-  IN_STOCK: 'bg-emerald-500',
-  ISSUED: 'bg-blue-500',
-  QUARANTINED: 'bg-amber-500',
-  SCRAPPED: 'bg-red-500',
-  DAMAGED: 'bg-orange-500',
-  EXPIRED: 'bg-purple-400',
-  DESTROYED: 'bg-red-700',
-}
-
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  RECEIVE: '↩ Receive',
-  TRANSFER: '⇄ Transfer',
-  ISSUE: '↗ Issue',
-  RETURN: '↙ Return',
-  ADJUST: '⚙ Adjust',
-}
-
-const MOVEMENT_TYPE_COLORS: Record<string, string> = {
-  RECEIVE: 'bg-emerald-100 text-emerald-800',
-  TRANSFER: 'bg-blue-100 text-blue-800',
-  ISSUE: 'bg-amber-100 text-amber-800',
-  RETURN: 'bg-purple-100 text-purple-800',
-  ADJUST: 'bg-gray-100 text-gray-800',
-}
-
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: 'Administrator',
-  MANAGER: 'Shift Manager',
-  VIEWER: 'Operations Manager',
+const MOVEMENT_LABELS: Record<string, { text: string; badge: string; icon: string }> = {
+  RECEIVE: { text: 'Receive', badge: 'status-in-stock', icon: '↓' },
+  TRANSFER: { text: 'Transfer', badge: 'status-issued', icon: '⇄' },
+  ISSUE: { text: 'Issue', badge: 'status-quarantined', icon: '→' },
+  RETURN: { text: 'Return', badge: 'status-expired', icon: '←' },
+  ADJUST: { text: 'Adjust', badge: 'status-scrapped', icon: '⚙' },
 }
 
 function MetricCard({
   label,
   value,
   sub,
+  icon,
   accent,
 }: {
   label: string
   value: string | number
   sub?: string
+  icon: React.ReactNode
   accent: string
 }) {
   return (
-    <div className={`card p-5 border-l-4 ${accent}`}>
-      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className="mt-1 text-3xl font-bold text-gray-900">{value}</p>
-      {sub && <p className="mt-1 text-xs text-gray-500">{sub}</p>}
+    <div className="card-hover p-5 flex items-start gap-4">
+      <div className={`flex items-center justify-center w-11 h-11 rounded-xl ${accent} shrink-0`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+        <p className="mt-0.5 text-2xl font-bold text-gray-900">{value}</p>
+        {sub && <p className="mt-0.5 text-xs text-gray-500">{sub}</p>}
+      </div>
     </div>
   )
 }
@@ -125,7 +108,6 @@ export default function Dashboard() {
     refetchInterval: 30_000,
   })
 
-  // Refresh dashboard stats on any inventory or movement event
   useEffect(() => {
     return subscribe((msg) => {
       if (msg.event === 'inventory_update' || msg.event === 'movement_created') {
@@ -145,75 +127,100 @@ export default function Dashboard() {
   const breakdown = stats?.statusBreakdown ?? {} as StatusBreakdown
   const inStock = breakdown.IN_STOCK ?? 0
   const inUse = breakdown.ISSUED ?? 0
-  const damaged = (breakdown.QUARANTINED ?? 0) + (breakdown.DAMAGED ?? 0)
-  const removed = (breakdown.SCRAPPED ?? 0) + (breakdown.DESTROYED ?? 0)
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 max-w-7xl">
+      {/* Welcome */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
-          🎰 Casino WMS — Dashboard
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Welcome back, <strong>{user?.username}</strong> · {ROLE_LABELS[user?.role ?? ''] ?? user?.role}
+        <h1 className="page-title">Dashboard</h1>
+        <p className="page-subtitle">
+          Welcome back, <span className="font-medium text-gray-700">{user?.username}</span>
         </p>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-20 text-gray-400">Loading metrics…</div>
+        <div className="flex items-center justify-center py-20">
+          <div className="flex items-center gap-3 text-gray-400">
+            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 0 1 4 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            <span className="text-sm">Loading dashboard…</span>
+          </div>
+        </div>
       ) : (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
               label="Total Inventory"
               value={total}
               sub="all serialized units"
-              accent="border-indigo-500"
+              accent="bg-primary-50 text-primary-600"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+                </svg>
+              }
             />
             <MetricCard
               label="Active"
               value={inStock}
               sub={total ? `${Math.round((inStock / total) * 100)}% of total` : '—'}
-              accent="border-emerald-500"
+              accent="bg-emerald-50 text-emerald-600"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+              }
             />
             <MetricCard
               label="In Use / Issued"
               value={inUse}
               sub={total ? `${Math.round((inUse / total) * 100)}% of total` : '—'}
-              accent="border-blue-500"
+              accent="bg-blue-50 text-blue-600"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                </svg>
+              }
             />
             <MetricCard
               label="Low Stock Alerts"
               value={stats?.lowStockItems.length ?? 0}
               sub="items below minimum"
-              accent="border-red-500"
+              accent="bg-red-50 text-red-600"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                </svg>
+              }
             />
           </div>
 
-          {/* Status Breakdown bar */}
-          <div className="card p-5">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Inventory Status Breakdown</h2>
+          {/* Status Breakdown */}
+          <div className="card p-6">
+            <h2 className="text-sm font-semibold text-gray-700 mb-4">Inventory Status Breakdown</h2>
             {total > 0 ? (
               <>
-                <div className="flex h-4 rounded-full overflow-hidden gap-0.5">
+                <div className="flex h-3 rounded-full overflow-hidden gap-px bg-gray-100">
                   {(Object.entries(breakdown) as [string, number][]).map(([status, count]) =>
                     count > 0 ? (
                       <div
                         key={status}
-                        className={`${STATUS_BAR_COLORS[status]} transition-all`}
+                        className={`${STATUS_COLORS[status]?.bar ?? 'bg-gray-300'} transition-all duration-500 first:rounded-l-full last:rounded-r-full`}
                         style={{ width: `${(count / total) * 100}%` }}
                         title={`${STATUS_LABELS[status]}: ${count}`}
                       />
                     ) : null
                   )}
                 </div>
-                <div className="flex flex-wrap gap-4 mt-3">
+                <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4">
                   {(Object.entries(breakdown) as [string, number][]).map(([status, count]) => (
-                    <div key={status} className="flex items-center gap-1.5 text-xs text-gray-600">
-                      <span className={`w-2.5 h-2.5 rounded-full ${STATUS_BAR_COLORS[status]}`} />
-                      {STATUS_LABELS[status]}: <strong>{count}</strong>
+                    <div key={status} className="flex items-center gap-2 text-xs text-gray-600">
+                      <span className={`badge-dot ${STATUS_COLORS[status]?.dot ?? 'bg-gray-300'}`} />
+                      <span>{STATUS_LABELS[status]}</span>
+                      <span className="font-semibold text-gray-900">{count}</span>
                     </div>
                   ))}
                 </div>
@@ -225,31 +232,39 @@ export default function Dashboard() {
 
           <div className="grid lg:grid-cols-2 gap-6">
             {/* Low Stock Alerts */}
-            <div className="card">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-700">🔴 Low Stock Alerts</h2>
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+                <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                  </svg>
+                  Low Stock Alerts
+                </h2>
                 <button
-                  className="text-xs text-indigo-600 hover:underline"
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
                   onClick={() => navigate('/items')}
                 >
-                  View all items →
+                  View all →
                 </button>
               </div>
               {stats?.lowStockItems.length === 0 ? (
-                <p className="px-5 py-6 text-sm text-gray-400">All items are above minimum stock.</p>
+                <div className="px-6 py-8 text-center">
+                  <svg className="w-8 h-8 text-gray-200 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  </svg>
+                  <p className="text-sm text-gray-400">All items above minimum stock</p>
+                </div>
               ) : (
                 <ul className="divide-y divide-gray-50">
                   {stats?.lowStockItems.map(item => (
-                    <li key={item.id} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                    <li key={item.id} className="px-6 py-3 flex items-center justify-between hover:bg-surface-secondary transition-colors">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
                         <p className="text-xs text-gray-500">{item.sku} · {item.category ?? 'No category'}</p>
                       </div>
-                      <div className="text-right">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          {item.inStockCount} in stock (min: {item.minStock})
-                        </span>
-                      </div>
+                      <span className="badge status-destroyed shrink-0 ml-3">
+                        {item.inStockCount} / {item.minStock}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -257,61 +272,112 @@ export default function Dashboard() {
             </div>
 
             {/* Recent Activity */}
-            <div className="card">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <h2 className="text-sm font-semibold text-gray-700">📋 Recent Activity</h2>
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
+                <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  </svg>
+                  Recent Activity
+                </h2>
               </div>
               {stats?.recentMovements.length === 0 ? (
-                <p className="px-5 py-6 text-sm text-gray-400">No movements recorded yet.</p>
+                <div className="px-6 py-8 text-center">
+                  <svg className="w-8 h-8 text-gray-200 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                  </svg>
+                  <p className="text-sm text-gray-400">No movements recorded yet</p>
+                </div>
               ) : (
                 <ul className="divide-y divide-gray-50">
-                  {stats?.recentMovements.map(m => (
-                    <li key={m.id} className="px-5 py-3 flex items-start justify-between gap-2 hover:bg-gray-50">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              MOVEMENT_TYPE_COLORS[m.type] ?? 'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {MOVEMENT_TYPE_LABELS[m.type] ?? m.type}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            {m.linesCount} unit{m.linesCount !== 1 ? 's' : ''}
-                          </span>
+                  {stats?.recentMovements.map(m => {
+                    const meta = MOVEMENT_LABELS[m.type] ?? { text: m.type, badge: 'status-scrapped', icon: '•' }
+                    return (
+                      <li key={m.id} className="px-6 py-3 flex items-start justify-between gap-3 hover:bg-surface-secondary transition-colors">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className={`badge ${meta.badge}`}>
+                              {meta.icon} {meta.text}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {m.linesCount} unit{m.linesCount !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">
+                            by {m.createdBy.username}
+                          </p>
+                          {m.note && <p className="text-xs text-gray-400 truncate mt-0.5">{m.note}</p>}
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5 truncate">
-                          by {m.createdBy.username} · {ROLE_LABELS[m.createdBy.role] ?? m.createdBy.role}
-                        </p>
-                        {m.note && <p className="text-xs text-gray-400 truncate">{m.note}</p>}
-                      </div>
-                      <time className="text-xs text-gray-400 whitespace-nowrap shrink-0">
-                        {new Date(m.createdAt).toLocaleString()}
-                      </time>
-                    </li>
-                  ))}
+                        <time className="text-2xs text-gray-400 whitespace-nowrap shrink-0 pt-0.5">
+                          {new Date(m.createdAt).toLocaleString()}
+                        </time>
+                      </li>
+                    )
+                  })}
                 </ul>
               )}
             </div>
           </div>
 
-          {/* Quick action shortcuts */}
+          {/* Quick Actions */}
           <div>
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Quick Actions</h2>
+            <h2 className="section-title mb-3">Quick Actions</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Receive Stock', emoji: '↩', to: '/movements/receive', color: 'hover:border-emerald-400' },
-                { label: 'Transfer', emoji: '⇄', to: '/movements/transfer', color: 'hover:border-blue-400' },
-                { label: 'Issue Items', emoji: '↗', to: '/movements/issue', color: 'hover:border-amber-400' },
-                { label: 'Return Items', emoji: '↙', to: '/movements/return', color: 'hover:border-purple-400' },
+                {
+                  label: 'Receive Stock',
+                  to: '/movements/receive',
+                  color: 'hover:border-emerald-300 hover:bg-emerald-50/50',
+                  iconColor: 'bg-emerald-50 text-emerald-600',
+                  icon: (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859M12 3v8.25m0 0-3-3m3 3 3-3" />
+                    </svg>
+                  ),
+                },
+                {
+                  label: 'Transfer',
+                  to: '/movements/transfer',
+                  color: 'hover:border-blue-300 hover:bg-blue-50/50',
+                  iconColor: 'bg-blue-50 text-blue-600',
+                  icon: (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                    </svg>
+                  ),
+                },
+                {
+                  label: 'Issue Items',
+                  to: '/movements/issue',
+                  color: 'hover:border-amber-300 hover:bg-amber-50/50',
+                  iconColor: 'bg-amber-50 text-amber-600',
+                  icon: (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                    </svg>
+                  ),
+                },
+                {
+                  label: 'Return Items',
+                  to: '/movements/return',
+                  color: 'hover:border-purple-300 hover:bg-purple-50/50',
+                  iconColor: 'bg-purple-50 text-purple-600',
+                  icon: (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                    </svg>
+                  ),
+                },
               ].map(q => (
                 <button
                   key={q.to}
-                  className={`card p-4 text-center hover:shadow-md transition-all cursor-pointer ${q.color}`}
+                  className={`card-hover p-4 flex flex-col items-center gap-3 cursor-pointer transition-all ${q.color}`}
                   onClick={() => navigate(q.to)}
                 >
-                  <div className="text-2xl mb-1">{q.emoji}</div>
-                  <div className="text-xs font-medium text-gray-700">{q.label}</div>
+                  <div className={`flex items-center justify-center w-10 h-10 rounded-xl ${q.iconColor}`}>
+                    {q.icon}
+                  </div>
+                  <span className="text-xs font-medium text-gray-700">{q.label}</span>
                 </button>
               ))}
             </div>
@@ -321,4 +387,3 @@ export default function Dashboard() {
     </div>
   )
 }
-

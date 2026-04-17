@@ -122,32 +122,50 @@ export default function Items() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 max-w-7xl">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Items</h1>
+        <div>
+          <h1 className="page-title">Inventory Items</h1>
+          <p className="page-subtitle">{items.length} items registered</p>
+        </div>
         <button className="btn-primary" onClick={openCreate}>
-          + Add Item
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Add Item
         </button>
       </div>
 
+      {/* Search & Table */}
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
-          <input
-            type="search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="input max-w-xs"
-            placeholder="Search by name or SKU…"
-          />
+        <div className="p-4 border-b border-gray-100">
+          <div className="relative max-w-xs">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="input pl-9"
+              placeholder="Search by name or SKU…"
+            />
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           {isLoading ? (
-            <div className="p-8 text-center text-gray-500">Loading…</div>
+            <div className="p-8 text-center text-gray-400 text-sm">Loading items…</div>
           ) : filtered.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">No items found.</div>
+            <div className="p-8 text-center">
+              <svg className="w-10 h-10 text-gray-200 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+              </svg>
+              <p className="text-sm text-gray-400">No items found</p>
+            </div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-100">
               <thead>
                 <tr>
                   <th className="table-header">SKU</th>
@@ -157,36 +175,33 @@ export default function Items() {
                   <th className="table-header hidden lg:table-cell">Batch</th>
                   <th className="table-header hidden sm:table-cell">Unit</th>
                   <th className="table-header hidden md:table-cell">Min Stock</th>
-                  <th className="table-header">Actions</th>
+                  <th className="table-header text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+              <tbody className="bg-white divide-y divide-gray-50">
                 {filtered.map(item => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="table-cell font-mono text-xs">{item.sku}</td>
+                  <tr key={item.id} className="hover:bg-surface-secondary transition-colors">
+                    <td className="table-cell font-mono text-xs text-gray-500">{item.sku}</td>
                     <td className="table-cell">
                       <button
-                        className="text-indigo-600 hover:underline font-medium"
+                        className="text-primary-600 hover:text-primary-700 font-medium transition-colors"
                         onClick={() => navigate(`/items/${item.id}`)}
                       >
                         {item.name}
                       </button>
                     </td>
-                    <td className="table-cell hidden sm:table-cell">{item.category ?? '—'}</td>
-                    <td className="table-cell hidden md:table-cell">{item.supplier ?? '—'}</td>
-                    <td className="table-cell hidden lg:table-cell">{item.batch ?? '—'}</td>
-                    <td className="table-cell hidden sm:table-cell">{item.unit ?? '—'}</td>
-                    <td className="table-cell hidden md:table-cell">{item.minStock ?? '—'}</td>
-                    <td className="table-cell">
-                      <div className="flex gap-2">
-                        <button
-                          className="btn-secondary btn-sm"
-                          onClick={() => openEdit(item)}
-                        >
+                    <td className="table-cell hidden sm:table-cell text-gray-500">{item.category ?? '—'}</td>
+                    <td className="table-cell hidden md:table-cell text-gray-500">{item.supplier ?? '—'}</td>
+                    <td className="table-cell hidden lg:table-cell text-gray-500">{item.batch ?? '—'}</td>
+                    <td className="table-cell hidden sm:table-cell text-gray-500">{item.unit ?? '—'}</td>
+                    <td className="table-cell hidden md:table-cell text-gray-500">{item.minStock ?? '—'}</td>
+                    <td className="table-cell text-right">
+                      <div className="flex gap-1.5 justify-end">
+                        <button className="btn-secondary btn-sm" onClick={() => openEdit(item)}>
                           Edit
                         </button>
                         <button
-                          className="btn-danger btn-sm"
+                          className="btn-ghost btn-sm text-red-600 hover:text-red-700 hover:bg-red-50"
                           onClick={() => {
                             if (confirm(`Delete item "${item.name}"?`)) {
                               deleteMutation.mutate(item.id)
@@ -207,11 +222,18 @@ export default function Items() {
 
       {/* Modal */}
       {modalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-4">{editing ? 'Edit Item' : 'Add Item'}</h2>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+        <div className="modal-overlay">
+          <div className="modal-content max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-900">{editing ? 'Edit Item' : 'Add Item'}</h2>
+              <button onClick={closeModal} className="btn-icon">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">SKU *</label>
                   <input {...register('sku')} className="input" disabled={!!editing} />
@@ -242,7 +264,7 @@ export default function Items() {
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">Supplier</label>
                   <input {...register('supplier')} className="input" placeholder="Supplier name" />
@@ -252,7 +274,7 @@ export default function Items() {
                   <input {...register('batch')} className="input" placeholder="e.g. LOT-2024-01" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label">Unit</label>
                   <input {...register('unit')} className="input" placeholder="pcs, decks, sets…" />
@@ -266,7 +288,7 @@ export default function Items() {
                 <label className="label">Description</label>
                 <textarea {...register('description')} rows={2} className="input" placeholder="Optional notes about this item…" />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-3 border-t border-gray-100">
                 <button type="button" className="btn-secondary" onClick={closeModal}>
                   Cancel
                 </button>
