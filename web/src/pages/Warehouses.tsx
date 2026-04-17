@@ -89,11 +89,15 @@ export default function Warehouses() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-7xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Warehouses</h1>
+        <div>
+          <h1 className="page-title">Warehouses</h1>
+          <p className="page-subtitle">Manage warehouse locations and storage facilities</p>
+        </div>
         <button className="btn-primary" onClick={openCreate}>
-          + Add Warehouse
+          <svg className="w-4 h-4 mr-1.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          Add Warehouse
         </button>
       </div>
 
@@ -104,7 +108,7 @@ export default function Warehouses() {
           ) : warehouses.length === 0 ? (
             <div className="p-8 text-center text-gray-500">No warehouses found.</div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-100">
               <thead>
                 <tr>
                   <th className="table-header">Code</th>
@@ -113,13 +117,13 @@ export default function Warehouses() {
                   <th className="table-header">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+              <tbody className="bg-white divide-y divide-gray-50">
                 {warehouses.map(w => (
-                  <tr key={w.id} className="hover:bg-gray-50">
+                  <tr key={w.id} className="hover:bg-surface-secondary transition-colors">
                     <td className="table-cell font-mono text-xs">{w.code}</td>
                     <td className="table-cell">
                       <button
-                        className="text-indigo-600 hover:underline font-medium"
+                        className="text-primary-600 hover:text-primary-700 transition-colors font-medium"
                         onClick={() => navigate(`/warehouses/${w.id}/locations`)}
                       >
                         {w.name}
@@ -165,8 +169,8 @@ export default function Warehouses() {
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="card p-6 w-full max-w-md">
+        <div className="modal-overlay">
+          <div className="modal-content w-full max-w-md">
             <h2 className="text-lg font-semibold mb-4">
               {editing ? 'Edit Warehouse' : 'Add Warehouse'}
             </h2>

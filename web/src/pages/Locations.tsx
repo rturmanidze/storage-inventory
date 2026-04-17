@@ -100,22 +100,23 @@ export default function Locations() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-7xl mx-auto space-y-5">
       <div className="flex items-center gap-3">
-        <button className="btn-secondary btn-sm" onClick={() => navigate('/warehouses')}>
-          ← Back
+        <button className="btn-ghost btn-icon" onClick={() => navigate('/warehouses')}>
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="page-title">
             {warehouse?.name ?? 'Warehouse'} — Locations
           </h1>
-          <p className="text-sm text-gray-500">Code: {warehouse?.code}</p>
+          <p className="page-subtitle">Code: {warehouse?.code}</p>
         </div>
       </div>
 
       <div className="flex justify-end">
         <button className="btn-primary" onClick={openCreate}>
-          + Add Location
+          <svg className="w-4 h-4 mr-1.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+          Add Location
         </button>
       </div>
 
@@ -126,7 +127,7 @@ export default function Locations() {
           ) : locations.length === 0 ? (
             <div className="p-8 text-center text-gray-500">No locations yet.</div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-100">
               <thead>
                 <tr>
                   <th className="table-header">Code</th>
@@ -134,9 +135,9 @@ export default function Locations() {
                   <th className="table-header">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+              <tbody className="bg-white divide-y divide-gray-50">
                 {locations.map(loc => (
-                  <tr key={loc.id} className="hover:bg-gray-50">
+                  <tr key={loc.id} className="hover:bg-surface-secondary transition-colors">
                     <td className="table-cell font-mono text-sm">{loc.code}</td>
                     <td className="table-cell text-gray-600">{loc.description ?? '—'}</td>
                     <td className="table-cell">
@@ -168,8 +169,8 @@ export default function Locations() {
       </div>
 
       {modalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="card p-6 w-full max-w-sm">
+        <div className="modal-overlay">
+          <div className="modal-content w-full max-w-sm">
             <h2 className="text-lg font-semibold mb-4">
               {editing ? 'Edit Location' : 'Add Location'}
             </h2>

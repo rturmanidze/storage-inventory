@@ -58,16 +58,21 @@ export default function AuditLogPage() {
   })
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Audit Log</h1>
+    <div className="max-w-7xl mx-auto space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-title">Audit Log</h1>
+          <p className="page-subtitle">Track all system activity and changes</p>
+        </div>
         <button onClick={() => refetch()} className="btn-secondary btn-sm">
-          ↻ Refresh
+          <svg className="w-4 h-4 mr-1.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Refresh
         </button>
       </div>
 
       {/* Filters */}
-      <div className="card mb-6">
+      <div className="card p-5">
+        <h2 className="section-title mb-3">Filters</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="label">Action contains</label>
@@ -107,47 +112,47 @@ export default function AuditLogPage() {
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Time</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">User</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Action</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Resource</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">IP</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Detail</th>
+                <tr>
+                  <th className="table-header">Time</th>
+                  <th className="table-header">User</th>
+                  <th className="table-header">Action</th>
+                  <th className="table-header">Resource</th>
+                  <th className="table-header">IP</th>
+                  <th className="table-header">Detail</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-gray-50">
                 {(data ?? []).length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={6} className="table-cell text-center text-gray-400 py-8">
                       No audit entries found
                     </td>
                   </tr>
                 )}
                 {(data ?? []).map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-500">
+                  <tr key={entry.id} className="hover:bg-surface-secondary transition-colors">
+                    <td className="table-cell whitespace-nowrap text-gray-500">
                       {new Date(entry.createdAt).toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-700">
+                    <td className="table-cell whitespace-nowrap font-medium text-gray-700">
                       {entry.user?.username ?? (entry.userId ? `#${entry.userId}` : '—')}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="table-cell whitespace-nowrap">
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                        className={`badge ${
                           ACTION_BADGE[entry.action] ?? 'bg-gray-100 text-gray-600'
                         }`}
                       >
                         {entry.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-500">
+                    <td className="table-cell whitespace-nowrap text-gray-500">
                       {entry.resourceType ? `${entry.resourceType} #${entry.resourceId}` : '—'}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-gray-400 text-xs">
+                    <td className="table-cell whitespace-nowrap text-gray-400 text-2xs">
                       {entry.ipAddress ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs max-w-xs truncate">
+                    <td className="table-cell text-gray-500 text-xs max-w-xs truncate">
                       {parseDetail(entry.detail)}
                     </td>
                   </tr>
