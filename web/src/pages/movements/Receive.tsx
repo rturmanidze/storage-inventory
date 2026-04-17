@@ -88,7 +88,15 @@ export default function Receive() {
       itemId: number
       serials: string[]
       toLocationId: number
-    }) => api.post('/movements/receive', payload),
+      note?: string
+    }) => api.post('/movements/receive', {
+      itemId: payload.itemId,
+      note: payload.note ?? null,
+      lines: payload.serials.map(serial => ({
+        serial,
+        toLocationId: payload.toLocationId,
+      })),
+    }),
     onSuccess: () => {
       toast.success('Received successfully')
       resetAll()
