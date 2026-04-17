@@ -55,7 +55,7 @@ export default function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen((v: boolean) => !v)}
+        onClick={() => setOpen(v => !v)}
         className="btn-icon relative"
         aria-label="Notifications"
       >

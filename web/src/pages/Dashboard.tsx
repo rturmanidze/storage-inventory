@@ -123,8 +123,17 @@ export default function Dashboard() {
     })
   }, [subscribe, queryClient])
 
+  const defaultBreakdown: StatusBreakdown = {
+    IN_STOCK: 0,
+    ISSUED: 0,
+    QUARANTINED: 0,
+    SCRAPPED: 0,
+    DAMAGED: 0,
+    EXPIRED: 0,
+    DESTROYED: 0,
+  }
   const total = stats?.totalUnits ?? 0
-  const breakdown = stats?.statusBreakdown ?? {} as StatusBreakdown
+  const breakdown = stats?.statusBreakdown ?? defaultBreakdown
   const inStock = breakdown.IN_STOCK ?? 0
   const inUse = breakdown.ISSUED ?? 0
 
