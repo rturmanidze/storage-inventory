@@ -1,12 +1,13 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
+from app.audit import log_action
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Item, ItemBarcode, User
-from app.schemas import BarcodeCreate, BarcodeOut, ItemCreate, ItemOut, ItemUpdate
+from app.schemas import BarcodeCreate, BarcodeOut, ItemCreate, ItemCreateWithBarcode, ItemOut, ItemUpdate
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -29,11 +30,86 @@ def list_items(
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
 def create_item(
     body: ItemCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     item = Item(**body.model_dump())
     db.add(item)
+    db.flush()
+    log_action(
+        db,
+        "CREATE_ITEM",
+        user_id=current_user.id,
+        resource_type="item",
+        resource_id=item.id,
+        detail={"sku": item.sku, "name": item.name, "category": item.category},
+        request=request,
+    )
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.post("/with-barcode", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
+def create_item_with_barcode(
+    body: ItemCreateWithBarcode,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new item and attach a barcode in a single operation.
+
+    Used by the Receive Stock workflow when a scanned barcode is not yet
+    in the system, so the user can register a new item on the spot.
+    """
+    # Check barcode uniqueness
+    existing = db.query(ItemBarcode).filter(ItemBarcode.value == body.barcode).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Barcode '{body.barcode}' is already assigned to another item",
+        )
+    # Check SKU uniqueness
+    existing_item = db.query(Item).filter(Item.sku == body.sku).first()
+    if existing_item:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"An item with SKU '{body.sku}' already exists",
+        )
+
+    item = Item(
+        sku=body.sku,
+        name=body.name,
+        description=body.description,
+        category=body.category,
+        supplier=body.supplier,
+        batch=body.batch,
+        unit=body.unit or "pcs",
+        minStock=body.minStock or 0,
+    )
+    db.add(item)
+    db.flush()
+
+    barcode = ItemBarcode(itemId=item.id, value=body.barcode)
+    db.add(barcode)
+    db.flush()
+
+    log_action(
+        db,
+        "CREATE_ITEM_FROM_BARCODE",
+        user_id=current_user.id,
+        resource_type="item",
+        resource_id=item.id,
+        detail={
+            "sku": item.sku,
+            "name": item.name,
+            "category": item.category,
+            "barcode": body.barcode,
+            "source": "receive_stock_scan",
+        },
+        request=request,
+    )
     db.commit()
     db.refresh(item)
     return item

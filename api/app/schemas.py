@@ -369,6 +369,27 @@ class NotificationOut(OrmBase):
 
 # ── Import ────────────────────────────────────────────────────────────────────
 
+# ── Scan ──────────────────────────────────────────────────────────────────────
+
+class BarcodeScanResponse(BaseModel):
+    items: List[ItemOut]
+    found: bool
+
+
+class ItemCreateWithBarcode(BaseModel):
+    sku: str
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    supplier: Optional[str] = None
+    batch: Optional[str] = None
+    unit: Optional[str] = "pcs"
+    minStock: Optional[int] = 0
+    barcode: str
+
+
+# ── Import ────────────────────────────────────────────────────────────────────
+
 class ImportError(BaseModel):
     row: int
     message: str
