@@ -473,7 +473,22 @@ class CardInventorySummary(BaseModel):
     totalShoes: int
 
 
+class DeckColorStatus(BaseModel):
+    available: int
+    threshold: int
+    isLow: bool
+    cards: int
+
+
+class DeckLowStockResponse(BaseModel):
+    black: DeckColorStatus
+    red: DeckColorStatus
+    hasAlerts: bool
+    alertCount: int
+
+
 class DashboardCardStats(BaseModel):
     inventory: CardInventorySummary
     recentEntries: List[DeckEntryOut]
+    lowStock: DeckLowStockResponse
 

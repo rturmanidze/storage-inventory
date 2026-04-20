@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
+import { useSearchParams } from 'react-router-dom'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -27,6 +28,20 @@ interface CardInventory {
   shoesInWarehouse: number
   shoesSentToStudio: number
   totalShoes: number
+}
+
+interface DeckColorStatus {
+  available: number
+  threshold: number
+  isLow: boolean
+  cards: number
+}
+
+interface DeckLowStockResponse {
+  black: DeckColorStatus
+  red: DeckColorStatus
+  hasAlerts: boolean
+  alertCount: number
 }
 
 const schema = z.object({
@@ -53,6 +68,9 @@ export default function Decks() {
   const qc = useQueryClient()
   const [modalOpen, setModalOpen] = useState(false)
   const canAdd = user?.role === 'ADMIN' || user?.role === 'MANAGER'
+  const [searchParams] = useSearchParams()
+  const colorParam = searchParams.get('color') as 'BLACK' | 'RED' | null
+  const lowStockParam = searchParams.get('lowStock') === 'true'
 
   const { data: inventory } = useQuery<CardInventory>({
     queryKey: ['card-inventory'],
@@ -60,10 +78,29 @@ export default function Decks() {
     refetchInterval: 15_000,
   })
 
-  const { data: entries = [], isLoading } = useQuery<DeckEntry[]>({
+  const { data: lowStockData } = useQuery<DeckLowStockResponse>({
+    queryKey: ['deck-low-stock'],
+    queryFn: () => api.get('/deck-inventory/low-stock').then(r => r.data),
+    refetchInterval: 15_000,
+  })
+
+  const { data: allEntries = [], isLoading } = useQuery<DeckEntry[]>({
     queryKey: ['deck-entries'],
     queryFn: () => api.get('/cards/decks').then(r => r.data),
   })
+
+  // Apply client-side filters based on URL params
+  const entries = (() => {
+    let list = allEntries
+    if (colorParam) list = list.filter(e => e.color === colorParam)
+    if (lowStockParam && lowStockData) {
+      const lowColors = new Set<string>()
+      if (lowStockData.black.isLow) lowColors.add('BLACK')
+      if (lowStockData.red.isLow) lowColors.add('RED')
+      list = list.filter(e => lowColors.has(e.color))
+    }
+    return list
+  })()
 
   const {
     register,
@@ -73,16 +110,22 @@ export default function Decks() {
     formState: { errors, isSubmitting },
   } = useForm<DeckForm>({
     resolver: zodResolver(schema),
-    defaultValues: { color: 'BLACK', deckCount: 1 },
+    defaultValues: { color: colorParam ?? 'BLACK', deckCount: 1 },
   })
+
+  // Sync form default color when URL param changes
+  useEffect(() => {
+    if (colorParam) reset({ color: colorParam, deckCount: 1 })
+  }, [colorParam, reset])
 
   const deckCount = watch('deckCount') || 0
 
   const addMutation = useMutation({
-    mutationFn: (data: DeckForm) => api.post('/cards/decks', data),
+    mutationFn: (data: DeckForm) => api.post('/deck-inventory', data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deck-entries'] })
       qc.invalidateQueries({ queryKey: ['card-inventory'] })
+      qc.invalidateQueries({ queryKey: ['deck-low-stock'] })
       qc.invalidateQueries({ queryKey: ['dashboard-card-stats'] })
       toast.success('Decks added to inventory')
       setModalOpen(false)
@@ -91,32 +134,57 @@ export default function Decks() {
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to add decks'),
   })
 
+  const isBlackLow = lowStockData?.black.isLow
+  const isRedLow = lowStockData?.red.isLow
+
   return (
     <div className="space-y-6 max-w-5xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Deck Inventory</h1>
-          <p className="page-subtitle">Track card decks received into the warehouse</p>
+          <p className="page-subtitle">
+            {lowStockParam ? 'Showing low-stock colors only' : colorParam ? `Filtered by ${colorParam} decks` : 'Track card decks received into the warehouse'}
+          </p>
         </div>
         {canAdd && (
-          <button className="btn-primary" onClick={() => { reset(); setModalOpen(true) }}>
+          <button className="btn-primary" onClick={() => { reset({ color: colorParam ?? 'BLACK', deckCount: 1 }); setModalOpen(true) }}>
             + Add Decks
           </button>
         )}
       </div>
 
+      {/* Low stock warning banner */}
+      {(isBlackLow || isRedLow) && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 flex items-start gap-3">
+          <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+          </svg>
+          <div className="text-sm text-amber-800">
+            <p className="font-semibold mb-0.5">Low Stock Alert</p>
+            <p>
+              {[
+                isBlackLow && `Black decks (${lowStockData?.black.available} available, threshold: ${lowStockData?.black.threshold})`,
+                isRedLow && `Red decks (${lowStockData?.red.available} available, threshold: ${lowStockData?.red.threshold})`,
+              ].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Summary cards */}
       {inventory && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="card p-4 text-center">
+          <div className={`card p-4 text-center ${isBlackLow ? 'ring-2 ring-amber-400' : ''}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Black Decks</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.blackDecks}</p>
             <p className="text-xs text-gray-400 mt-0.5">{inventory.blackCards.toLocaleString()} cards</p>
+            {isBlackLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
           </div>
-          <div className="card p-4 text-center">
+          <div className={`card p-4 text-center ${isRedLow ? 'ring-2 ring-amber-400' : ''}`}>
             <p className="text-xs text-red-500 uppercase tracking-wide font-semibold">Red Decks</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.redDecks}</p>
             <p className="text-xs text-gray-400 mt-0.5">{inventory.redCards.toLocaleString()} cards</p>
+            {isRedLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
           </div>
           <div className="card p-4 text-center">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Decks</p>
@@ -134,7 +202,14 @@ export default function Decks() {
       {/* Entries table */}
       <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-700">Deck Receiving History</h2>
+          <h2 className="text-sm font-semibold text-gray-700">
+            Deck Receiving History
+            {(colorParam || lowStockParam) && (
+              <span className="ml-2 text-xs font-normal text-gray-400">
+                ({entries.length} of {allEntries.length} entries)
+              </span>
+            )}
+          </h2>
         </div>
         {isLoading ? (
           <div className="flex justify-center py-8 text-gray-400">
@@ -144,7 +219,9 @@ export default function Decks() {
             </svg>
           </div>
         ) : entries.length === 0 ? (
-          <div className="text-center py-10 text-gray-400 text-sm">No deck entries yet</div>
+          <div className="text-center py-10 text-gray-400 text-sm">
+            {lowStockParam ? 'No entries for low-stock colors' : 'No deck entries yet'}
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>

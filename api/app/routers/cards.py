@@ -13,7 +13,9 @@ from app.schemas import (
     AddDecksRequest,
     CardInventorySummary,
     CreateShoeRequest,
+    DeckColorStatus,
     DeckEntryOut,
+    DeckLowStockResponse,
     SendShoeRequest,
     ShoeOut,
 )
@@ -23,6 +25,9 @@ router = APIRouter(prefix="/cards", tags=["cards"])
 # Industry-standard casino card values — do not change without business sign-off
 DECKS_PER_SHOE = 8    # 1 shoe holds exactly 8 decks
 CARDS_PER_DECK = 52   # 1 standard deck = 52 cards (no jokers)
+
+# Minimum deck count per color before a low-stock alert is raised
+LOW_STOCK_THRESHOLD = 16  # 2 shoes worth of decks per color
 
 
 def _get_available_decks(db: Session, color: CardColor) -> int:
@@ -110,6 +115,30 @@ def list_deck_entries(
     return q.order_by(DeckEntry.createdAt.desc()).all()
 
 
+def _build_low_stock_response(db: Session) -> DeckLowStockResponse:
+    black_available = _get_available_decks(db, CardColor.BLACK)
+    red_available = _get_available_decks(db, CardColor.RED)
+    black_status = DeckColorStatus(
+        available=black_available,
+        threshold=LOW_STOCK_THRESHOLD,
+        isLow=black_available < LOW_STOCK_THRESHOLD,
+        cards=black_available * CARDS_PER_DECK,
+    )
+    red_status = DeckColorStatus(
+        available=red_available,
+        threshold=LOW_STOCK_THRESHOLD,
+        isLow=red_available < LOW_STOCK_THRESHOLD,
+        cards=red_available * CARDS_PER_DECK,
+    )
+    alert_count = sum([black_status.isLow, red_status.isLow])
+    return DeckLowStockResponse(
+        black=black_status,
+        red=red_status,
+        hasAlerts=alert_count > 0,
+        alertCount=alert_count,
+    )
+
+
 # ── Inventory Summary ─────────────────────────────────────────────────────────
 
 @router.get("/inventory", response_model=CardInventorySummary)
@@ -118,6 +147,14 @@ def get_inventory_summary(
     _: User = Depends(get_current_user),
 ):
     return _build_inventory_summary(db)
+
+
+@router.get("/low-stock", response_model=DeckLowStockResponse)
+def get_low_stock(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return _build_low_stock_response(db)
 
 
 # ── Shoes ─────────────────────────────────────────────────────────────────────

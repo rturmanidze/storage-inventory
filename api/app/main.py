@@ -7,6 +7,7 @@ from app.routers import (
     auth,
     cards,
     dashboard,
+    deck_inventory,
     import_data,
     items,
     locations,
@@ -47,6 +48,7 @@ _routers = [
     notifications.router,
     studios.router,
     cards.router,
+    deck_inventory.router,
 ]
 
 for router in _routers:

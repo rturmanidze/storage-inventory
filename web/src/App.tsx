@@ -13,7 +13,6 @@ import Warehouses from './pages/Warehouses'
 import Locations from './pages/Locations'
 import Units from './pages/Units'
 import Users from './pages/Users'
-import Receive from './pages/movements/Receive'
 import Import from './pages/Import'
 import AuditLog from './pages/AuditLog'
 import Reports from './pages/Reports'
@@ -40,7 +39,6 @@ function AppWithProviders() {
               <Route path="/units" element={<Units />} />
               <Route path="/units/:unitId/history" element={<UnitHistory />} />
               <Route path="/users" element={<Users />} />
-              <Route path="/movements/receive" element={<Receive />} />
               <Route path="/import" element={<Import />} />
               <Route path="/audit" element={<AuditLog />} />
               <Route path="/reports" element={<Reports />} />
