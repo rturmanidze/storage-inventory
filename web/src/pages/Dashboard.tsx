@@ -6,14 +6,6 @@ import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 import { useWebSocket } from '../contexts/WebSocketContext'
 
-import { useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import api from '../api/client'
-import { useAuth } from '../contexts/AuthContext'
-import { useWebSocket } from '../contexts/WebSocketContext'
-
 interface CardInventorySummary {
   blackDecks: number
   redDecks: number
