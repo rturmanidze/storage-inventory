@@ -11,11 +11,20 @@ import { useAuth } from '../contexts/AuthContext'
 interface DeckEntry {
   id: number
   color: 'BLACK' | 'RED'
+  material: 'PLASTIC' | 'PAPER' | null
   deckCount: number
   cardCount: number
   note: string | null
   createdAt: string
   createdBy: { id: number; username: string } | null
+}
+
+interface AddDecksResponse {
+  entries: DeckEntry[]
+  containersCreated: number
+  totalDecks: number
+  color: 'BLACK' | 'RED'
+  material: 'PLASTIC' | 'PAPER'
 }
 
 interface CardInventory {
@@ -25,6 +34,8 @@ interface CardInventory {
   redCards: number
   totalDecks: number
   totalCards: number
+  plasticDecks: number
+  paperDecks: number
   shoesInWarehouse: number
   shoesSentToStudio: number
   totalShoes: number
@@ -46,6 +57,7 @@ interface DeckLowStockResponse {
 
 const schema = z.object({
   color: z.enum(['BLACK', 'RED']),
+  material: z.enum(['PLASTIC', 'PAPER']),
   deckCount: z.coerce.number().int().min(1, 'Must add at least 1 deck'),
   note: z.string().optional(),
 })
@@ -59,6 +71,17 @@ function ColorBadge({ color }: { color: 'BLACK' | 'RED' }) {
     }`}>
       <span className={`w-2 h-2 rounded-full inline-block ${color === 'BLACK' ? 'bg-gray-300' : 'bg-red-500'}`} />
       {color === 'BLACK' ? 'Black' : 'Red'}
+    </span>
+  )
+}
+
+function MaterialBadge({ material }: { material: 'PLASTIC' | 'PAPER' | null }) {
+  if (!material) return <span className="text-gray-400 text-xs">—</span>
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+      material === 'PLASTIC' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+    }`}>
+      {material === 'PLASTIC' ? '🔷 Plastic' : '📄 Paper'}
     </span>
   )
 }
@@ -110,24 +133,28 @@ export default function Decks() {
     formState: { errors, isSubmitting },
   } = useForm<DeckForm>({
     resolver: zodResolver(schema),
-    defaultValues: { color: colorParam ?? 'BLACK', deckCount: 1 },
+    defaultValues: { color: colorParam ?? 'BLACK', material: 'PLASTIC', deckCount: 1 },
   })
 
   // Sync form default color when URL param changes
   useEffect(() => {
-    if (colorParam) reset({ color: colorParam, deckCount: 1 })
+    if (colorParam) reset({ color: colorParam, material: 'PLASTIC', deckCount: 1 })
   }, [colorParam, reset])
 
   const deckCount = watch('deckCount') || 0
+  const containersNeeded = deckCount > 0 ? Math.ceil(deckCount / 200) : 0
 
   const addMutation = useMutation({
-    mutationFn: (data: DeckForm) => api.post('/deck-inventory', data),
-    onSuccess: () => {
+    mutationFn: (data: DeckForm) => api.post('/deck-inventory', data).then(r => r.data as AddDecksResponse),
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['deck-entries'] })
       qc.invalidateQueries({ queryKey: ['card-inventory'] })
       qc.invalidateQueries({ queryKey: ['deck-low-stock'] })
       qc.invalidateQueries({ queryKey: ['dashboard-card-stats'] })
-      toast.success('Decks added to inventory')
+      const msg = data.containersCreated === 1
+        ? `${data.totalDecks} decks added (1 container created)`
+        : `${data.totalDecks} decks added (${data.containersCreated} containers created)`
+      toast.success(msg)
       setModalOpen(false)
       reset()
     },
@@ -147,7 +174,7 @@ export default function Decks() {
           </p>
         </div>
         {canAdd && (
-          <button className="btn-primary" onClick={() => { reset({ color: colorParam ?? 'BLACK', deckCount: 1 }); setModalOpen(true) }}>
+          <button className="btn-primary" onClick={() => { reset({ color: colorParam ?? 'BLACK', material: 'PLASTIC', deckCount: 1 }); setModalOpen(true) }}>
             + Add Decks
           </button>
         )}
@@ -173,7 +200,7 @@ export default function Decks() {
 
       {/* Summary cards */}
       {inventory && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className={`card p-4 text-center ${isBlackLow ? 'ring-2 ring-amber-400' : ''}`}>
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Black Decks</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.blackDecks}</p>
@@ -185,6 +212,16 @@ export default function Decks() {
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.redDecks}</p>
             <p className="text-xs text-gray-400 mt-0.5">{inventory.redCards.toLocaleString()} cards</p>
             {isRedLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-blue-500 uppercase tracking-wide font-semibold">Plastic</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.plasticDecks ?? 0}</p>
+            <p className="text-xs text-gray-400 mt-0.5">decks</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-amber-500 uppercase tracking-wide font-semibold">Paper</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.paperDecks ?? 0}</p>
+            <p className="text-xs text-gray-400 mt-0.5">decks</p>
           </div>
           <div className="card p-4 text-center">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Decks</p>
@@ -228,6 +265,7 @@ export default function Decks() {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">#</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Decks</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Cards</th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Note</th>
@@ -240,6 +278,7 @@ export default function Decks() {
                 <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-5 py-3 text-gray-400 text-xs">{entry.id}</td>
                   <td className="px-5 py-3"><ColorBadge color={entry.color} /></td>
+                  <td className="px-5 py-3"><MaterialBadge material={entry.material} /></td>
                   <td className="px-5 py-3 font-medium text-gray-800">+{entry.deckCount}</td>
                   <td className="px-5 py-3 text-gray-600">+{entry.cardCount.toLocaleString()}</td>
                   <td className="px-5 py-3 text-gray-500 max-w-xs truncate">{entry.note ?? '—'}</td>
@@ -282,18 +321,39 @@ export default function Decks() {
                 </div>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Card Material</label>
+                <div className="flex gap-3">
+                  {(['PLASTIC', 'PAPER'] as const).map(m => (
+                    <label key={m} className="flex items-center gap-2 cursor-pointer flex-1">
+                      <input type="radio" {...register('material')} value={m} className="sr-only" />
+                      <div className={`flex-1 px-4 py-3 rounded-lg border-2 text-center text-sm font-medium transition-all cursor-pointer ${
+                        watch('material') === m
+                          ? m === 'PLASTIC' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-amber-500 bg-amber-50 text-amber-700'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}
+                      onClick={() => reset({ ...watch(), material: m })}>
+                        {m === 'PLASTIC' ? '🔷 Plastic Cards' : '📄 Paper Cards'}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {errors.material && <p className="text-xs text-red-500 mt-1">{errors.material.message}</p>}
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number of Decks</label>
                 <input
                   type="number"
                   {...register('deckCount', { valueAsNumber: true })}
                   min={1}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="e.g. 10"
+                  placeholder="e.g. 450"
                 />
                 {errors.deckCount && <p className="text-xs text-red-500 mt-1">{errors.deckCount.message}</p>}
                 {deckCount > 0 && (
                   <p className="text-xs text-gray-500 mt-1">
-                    = {(deckCount * 52).toLocaleString()} cards &nbsp;|&nbsp; {Math.floor(deckCount / 8)} complete shoes possible
+                    = {(deckCount * 52).toLocaleString()} cards &nbsp;|&nbsp;
+                    {containersNeeded} container{containersNeeded !== 1 ? 's' : ''} will be created
+                    {deckCount % 200 !== 0 && ` (last one: ${deckCount % 200} decks)`}
                   </p>
                 )}
               </div>

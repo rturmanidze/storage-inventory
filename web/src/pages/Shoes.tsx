@@ -24,6 +24,7 @@ interface Shoe {
   id: number
   shoeNumber: number
   color: 'BLACK' | 'RED'
+  material: 'PLASTIC' | 'PAPER' | null
   status: ShoeStatus
   studioId: number | null
   studio: Studio | null
@@ -76,6 +77,17 @@ function ColorBadge({ color }: { color: 'BLACK' | 'RED' }) {
   )
 }
 
+function MaterialBadge({ material }: { material: 'PLASTIC' | 'PAPER' | null }) {
+  if (!material) return <span className="text-gray-400 text-xs">—</span>
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+      material === 'PLASTIC' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+    }`}>
+      {material === 'PLASTIC' ? '🔷 Plastic' : '📄 Paper'}
+    </span>
+  )
+}
+
 function StatusBadge({ status }: { status: ShoeStatus }) {
   const map: Partial<Record<ShoeStatus, { label: string; cls: string }>> = {
     IN_WAREHOUSE: { label: 'In Warehouse', cls: 'status-in-stock' },
@@ -110,6 +122,7 @@ export default function Shoes() {
   const [physicalDamageReason, setPhysicalDamageReason] = useState('')
   const [confirmDestroyModalShoe, setConfirmDestroyModalShoe] = useState<Shoe | null>(null)
   const [selectedColor, setSelectedColor] = useState<'BLACK' | 'RED'>('BLACK')
+  const [selectedMaterial, setSelectedMaterial] = useState<'PLASTIC' | 'PAPER'>('PLASTIC')
   const [selectedStudioId, setSelectedStudioId] = useState<number | ''>('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
@@ -140,7 +153,8 @@ export default function Shoes() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (color: 'BLACK' | 'RED') => api.post('/cards/shoes', { color }),
+    mutationFn: ({ color, material }: { color: 'BLACK' | 'RED'; material: 'PLASTIC' | 'PAPER' }) =>
+      api.post('/cards/shoes', { color, material }),
     onSuccess: () => { invalidate(); toast.success('Shoe created successfully'); setCreateModalOpen(false) },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to create shoe'),
   })
@@ -334,6 +348,7 @@ export default function Shoes() {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shoe #</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Studio</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created By</th>
@@ -361,6 +376,7 @@ export default function Shoes() {
                       <span className="ml-1 text-2xs text-gray-300">id:{shoe.id}</span>
                     </td>
                     <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
+                    <td className="px-4 py-3"><MaterialBadge material={shoe.material} /></td>
                     <td className="px-4 py-3">
                       <div>
                         <StatusBadge status={shoe.status} />
@@ -528,8 +544,29 @@ export default function Shoes() {
                   })}
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Material</label>
+                <div className="flex gap-3">
+                  {(['PLASTIC', 'PAPER'] as const).map(m => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setSelectedMaterial(m)}
+                      className={`flex-1 px-4 py-4 rounded-xl border-2 text-sm font-medium transition-all ${
+                        selectedMaterial === m
+                          ? m === 'PLASTIC' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-amber-500 bg-amber-50 text-amber-700'
+                          : 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="text-2xl mb-1">{m === 'PLASTIC' ? '🔷' : '📄'}</div>
+                      <div>{m === 'PLASTIC' ? 'Plastic Cards' : 'Paper Cards'}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700">
-                Creating a <strong>{selectedColor === 'BLACK' ? 'Black' : 'Red'}</strong> shoe will consume{' '}
+                Creating a <strong>{selectedColor === 'BLACK' ? 'Black' : 'Red'}</strong>{' '}
+                <strong>{selectedMaterial === 'PLASTIC' ? 'Plastic' : 'Paper'}</strong> shoe will consume{' '}
                 <strong>8 decks</strong> ({(8 * 52).toLocaleString()} cards)
               </div>
               <div className="flex gap-3 pt-1">
@@ -537,7 +574,7 @@ export default function Shoes() {
                 <button
                   className="btn-primary flex-1"
                   disabled={createMutation.isPending || (selectedColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)}
-                  onClick={() => createMutation.mutate(selectedColor)}
+                  onClick={() => createMutation.mutate({ color: selectedColor, material: selectedMaterial })}
                 >
                   {createMutation.isPending ? 'Creating…' : 'Create Shoe'}
                 </button>

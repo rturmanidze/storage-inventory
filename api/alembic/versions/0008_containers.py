@@ -29,6 +29,14 @@ def upgrade() -> None:
     bind = op.get_bind()
     bind.execute(sa.text("COMMIT"))
 
+    # CardColor was created in migration 0003; guard makes this migration idempotent.
+    bind.execute(sa.text(
+        "DO $$ BEGIN "
+        "  CREATE TYPE \"CardColor\" AS ENUM ('BLACK', 'RED'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; "
+        "END $$"
+    ))
+
     # New enum: CardMaterial
     bind.execute(sa.text(
         "DO $$ BEGIN "

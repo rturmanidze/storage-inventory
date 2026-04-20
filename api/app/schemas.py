@@ -424,7 +424,7 @@ class StudioOut(OrmBase):
 
 class AddDecksRequest(BaseModel):
     color: CardColor
-    material: Optional[CardMaterial] = None
+    material: CardMaterial
     deckCount: int = Field(gt=0)
     note: Optional[str] = None
 
@@ -441,8 +441,18 @@ class DeckEntryOut(OrmBase):
     createdBy: Optional[MovementCreatedByOut] = None
 
 
+class AddDecksResponse(BaseModel):
+    """Response returned when decks are added — one entry per auto-created container."""
+    entries: List[DeckEntryOut]
+    containersCreated: int
+    totalDecks: int
+    color: CardColor
+    material: CardMaterial
+
+
 class CreateShoeRequest(BaseModel):
     color: CardColor
+    material: CardMaterial
 
 
 class SendShoeRequest(BaseModel):
@@ -453,6 +463,7 @@ class ShoeOut(OrmBase):
     id: int
     shoeNumber: int
     color: CardColor
+    material: Optional[CardMaterial] = None
     status: ShoeStatus
     studioId: Optional[int] = None
     containerId: Optional[int] = None
@@ -492,6 +503,13 @@ class CardInventorySummary(BaseModel):
     redCards: int
     totalDecks: int
     totalCards: int
+    # Material breakdown
+    plasticDecks: int = 0
+    paperDecks: int = 0
+    plasticBlackDecks: int = 0
+    plasticRedDecks: int = 0
+    paperBlackDecks: int = 0
+    paperRedDecks: int = 0
     shoesInWarehouse: int
     shoesSentToStudio: int
     shoesReturned: int
@@ -503,6 +521,9 @@ class CardInventorySummary(BaseModel):
     # Legacy alias for backward compat — equals shoesCardsDestroyed + shoesPhysicallyDestroyed
     shoesDestroyed: int
     totalShoes: int
+    # Shoes by material
+    plasticShoes: int = 0
+    paperShoes: int = 0
 
 
 class DeckColorStatus(BaseModel):
@@ -598,6 +619,11 @@ class CardReportSummary(BaseModel):
     totalBlackCards: int
     totalRedCards: int
     totalCards: int
+    # Material breakdown
+    totalPlasticDecks: int = 0
+    totalPaperDecks: int = 0
+    totalPlasticCards: int = 0
+    totalPaperCards: int = 0
     shoesCreated: int
     shoesInWarehouse: int
     shoesSentToStudio: int
@@ -609,6 +635,9 @@ class CardReportSummary(BaseModel):
     shoesPhysicallyDestroyed: int
     shoesDestroyed: int  # legacy alias
     totalShoes: int
+    # Shoes by material
+    plasticShoesCreated: int = 0
+    paperShoesCreated: int = 0
     dailyConsumption: List[DeckConsumptionDay]
 
 

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import AuditLog, CardColor, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, User
+from app.models import AuditLog, CardColor, CardMaterial, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, User
 from app.schemas import CardReportSummary, DashboardStats, DeckConsumptionDay
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -217,6 +217,29 @@ def _get_available_decks_report(db: Session, color: CardColor) -> int:
     return int(total_added) - (int(holding_shoes) + int(cards_destroyed_shoes)) * DECKS_PER_SHOE
 
 
+def _get_available_decks_by_material_report(db: Session, material: CardMaterial) -> int:
+    """Available decks for a specific material across all colors."""
+    total_added = int(
+        db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
+        .filter(DeckEntry.material == material)
+        .scalar() or 0
+    )
+    holding_shoes = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.material == material,
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+        )
+        .scalar() or 0
+    )
+    cards_destroyed_shoes = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.material == material, Shoe.destroyedAt.isnot(None))
+        .scalar() or 0
+    )
+    return total_added - (holding_shoes + cards_destroyed_shoes) * DECKS_PER_SHOE
+
+
 @router.get("/cards/summary", response_model=CardReportSummary)
 def get_card_report_summary(
     db: Session = Depends(get_db),
@@ -226,6 +249,8 @@ def get_card_report_summary(
     black_decks = _get_available_decks_report(db, CardColor.BLACK)
     red_decks = _get_available_decks_report(db, CardColor.RED)
     total_decks = black_decks + red_decks
+    plastic_decks = _get_available_decks_by_material_report(db, CardMaterial.PLASTIC)
+    paper_decks = _get_available_decks_by_material_report(db, CardMaterial.PAPER)
 
     shoes_in_warehouse = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.IN_WAREHOUSE).scalar() or 0
@@ -256,6 +281,12 @@ def get_card_report_summary(
     )
     total_shoes = (
         db.query(func.count(Shoe.id)).scalar() or 0
+    )
+    plastic_shoes = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PLASTIC).scalar() or 0
+    )
+    paper_shoes = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER).scalar() or 0
     )
 
     # Daily deck consumption over last 30 days (decks consumed = shoes created * 8 - shoes returned * 8)
@@ -311,6 +342,10 @@ def get_card_report_summary(
         totalBlackCards=black_decks * CARDS_PER_DECK,
         totalRedCards=red_decks * CARDS_PER_DECK,
         totalCards=total_decks * CARDS_PER_DECK,
+        totalPlasticDecks=plastic_decks,
+        totalPaperDecks=paper_decks,
+        totalPlasticCards=plastic_decks * CARDS_PER_DECK,
+        totalPaperCards=paper_decks * CARDS_PER_DECK,
         shoesCreated=int(total_shoes),
         shoesInWarehouse=shoes_in_warehouse,
         shoesSentToStudio=shoes_sent,
@@ -322,6 +357,8 @@ def get_card_report_summary(
         shoesPhysicallyDestroyed=shoes_physically_destroyed,
         shoesDestroyed=shoes_cards_destroyed + shoes_physically_destroyed,
         totalShoes=int(total_shoes),
+        plasticShoesCreated=plastic_shoes,
+        paperShoesCreated=paper_shoes,
         dailyConsumption=daily_consumption,
     )
 

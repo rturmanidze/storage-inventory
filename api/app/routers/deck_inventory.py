@@ -21,6 +21,7 @@ from app.routers.cards import (
 )
 from app.schemas import (
     AddDecksRequest,
+    AddDecksResponse,
     CardInventorySummary,
     DeckEntryOut,
     DeckLowStockResponse,
@@ -29,14 +30,14 @@ from app.schemas import (
 router = APIRouter(prefix="/deck-inventory", tags=["deck-inventory"])
 
 
-@router.post("", response_model=DeckEntryOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=AddDecksResponse, status_code=status.HTTP_201_CREATED)
 def create_deck_entry(
     body: AddDecksRequest,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
-    """Add decks to inventory (same as POST /cards/decks)."""
+    """Add decks to inventory (same as POST /cards/decks). Auto-creates containers."""
     return add_decks(body, request, db, current_user)
 
 

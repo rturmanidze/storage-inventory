@@ -65,11 +65,12 @@ def consume_decks_fifo(
     color: CardColor,
     decks_needed: int,
     *,
+    material: Optional[CardMaterial] = None,
     user_id: Optional[int],
     shoe_id: Optional[int],
     request: Optional[Request] = None,
 ) -> Optional[Container]:
-    """Consume *decks_needed* decks from the oldest non-empty container of *color*.
+    """Consume *decks_needed* decks from the oldest non-empty container of *color* (and *material* if given).
 
     Returns the container that was consumed, or ``None`` when no matching
     container is available (caller should fall back to legacy DeckEntry pool).
@@ -83,14 +84,15 @@ def consume_decks_fifo(
     now = datetime.utcnow()
 
     # FIFO: oldest created, non-archived container with enough remaining decks
+    q = db.query(Container).filter(
+        Container.color == color,
+        Container.archivedAt.is_(None),
+        Container.decksRemaining >= decks_needed,
+    )
+    if material is not None:
+        q = q.filter(Container.material == material)
     container: Optional[Container] = (
-        db.query(Container)
-        .filter(
-            Container.color == color,
-            Container.archivedAt.is_(None),
-            Container.decksRemaining >= decks_needed,
-        )
-        .order_by(Container.createdAt.asc())
+        q.order_by(Container.createdAt.asc())
         .with_for_update(skip_locked=True)
         .first()
     )

@@ -13,6 +13,10 @@ interface CardInventorySummary {
   redCards: number
   totalDecks: number
   totalCards: number
+  plasticDecks: number
+  paperDecks: number
+  plasticShoes: number
+  paperShoes: number
   shoesInWarehouse: number
   shoesSentToStudio: number
   shoesReturned: number
@@ -399,6 +403,45 @@ export default function Dashboard() {
                 sub="permanently removed"
                 accent="bg-rose-50 text-rose-600"
                 onClick={() => navigate('/shoes/destroyed')}
+                icon={shoeIcon}
+              />
+            </div>
+          </div>
+
+          {/* By Material */}
+          <div>
+            <h2 className="section-title mb-3">By Material</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <MetricCard
+                label="Plastic Decks"
+                value={inventory?.plasticDecks ?? 0}
+                sub={`${((inventory?.plasticDecks ?? 0) * 52).toLocaleString()} cards`}
+                accent="bg-blue-50 text-blue-600"
+                onClick={() => navigate('/decks')}
+                icon={deckIcon}
+              />
+              <MetricCard
+                label="Paper Decks"
+                value={inventory?.paperDecks ?? 0}
+                sub={`${((inventory?.paperDecks ?? 0) * 52).toLocaleString()} cards`}
+                accent="bg-amber-50 text-amber-600"
+                onClick={() => navigate('/decks')}
+                icon={deckIcon}
+              />
+              <MetricCard
+                label="Plastic Shoes"
+                value={inventory?.plasticShoes ?? 0}
+                sub="total plastic card shoes"
+                accent="bg-blue-50 text-blue-600"
+                onClick={() => navigate('/shoes')}
+                icon={shoeIcon}
+              />
+              <MetricCard
+                label="Paper Shoes"
+                value={inventory?.paperShoes ?? 0}
+                sub="total paper card shoes"
+                accent="bg-amber-50 text-amber-600"
+                onClick={() => navigate('/shoes')}
                 icon={shoeIcon}
               />
             </div>

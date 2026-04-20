@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from app.audit import log_action
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import CardColor, Container, DeckEntry, Role, Shoe, ShoeStatus, Studio, User
+from app.models import CardColor, CardMaterial, Container, DeckEntry, Role, Shoe, ShoeStatus, Studio, User
 from app.schemas import (
     AddDecksRequest,
+    AddDecksResponse,
     CardInventorySummary,
     ConfirmPhysicalDestroyRequest,
     CreateShoeRequest,
@@ -97,10 +98,60 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
     )
     return int(total_added) - (int(holding_shoes) + int(cards_destroyed_shoes)) * DECKS_PER_SHOE
 
+def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
+    """Sum DeckEntry.deckCount filtered by material, minus decks held/destroyed by shoes with that material."""
+    total_added = int(
+        db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
+        .filter(DeckEntry.material == material)
+        .scalar()
+        or 0
+    )
+    holding_shoes = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.material == material,
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+        )
+        .scalar()
+        or 0
+    )
+    cards_destroyed_shoes = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.material == material, Shoe.destroyedAt.isnot(None))
+        .scalar()
+        or 0
+    )
+    return total_added - (holding_shoes + cards_destroyed_shoes) * DECKS_PER_SHOE
+
 
 def _build_inventory_summary(db: Session) -> CardInventorySummary:
     black_decks = _get_available_decks(db, CardColor.BLACK)
     red_decks = _get_available_decks(db, CardColor.RED)
+    plastic_decks = _get_deck_count_by_material(db, CardMaterial.PLASTIC)
+    paper_decks = _get_deck_count_by_material(db, CardMaterial.PAPER)
+
+    # Per (color × material) deck counts from DeckEntry
+    def _deck_cm(color: CardColor, material: CardMaterial) -> int:
+        total = int(
+            db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
+            .filter(DeckEntry.color == color, DeckEntry.material == material)
+            .scalar() or 0
+        )
+        h = int(
+            db.query(func.count(Shoe.id))
+            .filter(
+                Shoe.color == color, Shoe.material == material,
+                Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+            )
+            .scalar() or 0
+        )
+        d = int(
+            db.query(func.count(Shoe.id))
+            .filter(Shoe.color == color, Shoe.material == material, Shoe.destroyedAt.isnot(None))
+            .scalar() or 0
+        )
+        return total - (h + d) * DECKS_PER_SHOE
+
     shoes_in_warehouse = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.IN_WAREHOUSE).scalar() or 0
     )
@@ -129,6 +180,12 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED).scalar() or 0
     )
     total_shoes = int(db.query(func.count(Shoe.id)).scalar() or 0)
+    plastic_shoes = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PLASTIC).scalar() or 0
+    )
+    paper_shoes = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER).scalar() or 0
+    )
     return CardInventorySummary(
         blackDecks=black_decks,
         redDecks=red_decks,
@@ -136,6 +193,12 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         redCards=red_decks * CARDS_PER_DECK,
         totalDecks=black_decks + red_decks,
         totalCards=(black_decks + red_decks) * CARDS_PER_DECK,
+        plasticDecks=plastic_decks,
+        paperDecks=paper_decks,
+        plasticBlackDecks=_deck_cm(CardColor.BLACK, CardMaterial.PLASTIC),
+        plasticRedDecks=_deck_cm(CardColor.RED, CardMaterial.PLASTIC),
+        paperBlackDecks=_deck_cm(CardColor.BLACK, CardMaterial.PAPER),
+        paperRedDecks=_deck_cm(CardColor.RED, CardMaterial.PAPER),
         shoesInWarehouse=shoes_in_warehouse,
         shoesSentToStudio=shoes_sent,
         shoesReturned=shoes_returned,
@@ -146,6 +209,8 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         shoesPhysicallyDestroyed=shoes_physically_destroyed,
         shoesDestroyed=shoes_cards_destroyed + shoes_physically_destroyed,
         totalShoes=total_shoes,
+        plasticShoes=plastic_shoes,
+        paperShoes=paper_shoes,
     )
 
 
@@ -214,35 +279,120 @@ def _build_forecast(db: Session) -> StockForecastResponse:
 
 # ── Deck Entries ──────────────────────────────────────────────────────────────
 
-@router.post("/decks", response_model=DeckEntryOut, status_code=status.HTTP_201_CREATED)
+CONTAINER_CAPACITY = 200  # mirrors containers.py — decks per full container
+
+
+def _auto_create_containers(
+    db: Session,
+    color: CardColor,
+    material: CardMaterial,
+    deck_count: int,
+    note: Optional[str],
+    user_id: int,
+    request: Request,
+) -> list:
+    """Split *deck_count* into containers of CONTAINER_CAPACITY and persist them.
+
+    Each container also creates a matching DeckEntry (same pattern as the
+    manual container-creation endpoint).  Returns the list of DeckEntry records
+    so the caller can build the API response.
+    """
+    from app.models import ContainerEvent, ContainerEventType  # local import to avoid circular
+
+    now = datetime.utcnow()
+    remaining = deck_count
+    entries = []
+    idx = 1
+    while remaining > 0:
+        batch = min(remaining, CONTAINER_CAPACITY)
+        remaining -= batch
+
+        # Generate a unique container code based on timestamp + sequential index
+        ts = now.strftime("%Y%m%d%H%M%S")
+        code = f"AUTO-{color.value[:1]}-{material.value[:2]}-{ts}-{idx:03d}"
+        idx += 1
+
+        container = Container(
+            code=code,
+            color=color,
+            material=material,
+            decksRemaining=batch,
+            isLocked=False,
+            createdById=user_id,
+            createdAt=now,
+        )
+        db.add(container)
+        db.flush()
+
+        created_event = ContainerEvent(
+            containerId=container.id,
+            eventType=ContainerEventType.CREATED,
+            userId=user_id,
+            note=f"Auto-created from deck addition — {batch} decks",
+            createdAt=now,
+        )
+        db.add(created_event)
+
+        entry = DeckEntry(
+            color=color,
+            material=material,
+            deckCount=batch,
+            cardCount=batch * CARDS_PER_DECK,
+            note=note or f"Auto-created container {code}",
+            createdById=user_id,
+            createdAt=now,
+        )
+        db.add(entry)
+        db.flush()
+
+        log_action(
+            db,
+            "ADD_DECKS",
+            user_id=user_id,
+            resource_type="deck_entry",
+            resource_id=entry.id,
+            detail={
+                "color": color.value,
+                "material": material.value,
+                "deckCount": batch,
+                "cardCount": batch * CARDS_PER_DECK,
+                "containerCode": code,
+                "autoCreated": True,
+            },
+            request=request,
+        )
+        entries.append(entry)
+
+    return entries
+
+
+@router.post("/decks", response_model=AddDecksResponse, status_code=status.HTTP_201_CREATED)
 def add_decks(
     body: AddDecksRequest,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
-    entry = DeckEntry(
-        color=body.color,
-        deckCount=body.deckCount,
-        cardCount=body.deckCount * CARDS_PER_DECK,
-        note=body.note,
-        createdById=current_user.id,
-        createdAt=datetime.utcnow(),
-    )
-    db.add(entry)
-    db.flush()
-    log_action(
+    """Add decks to inventory and automatically split them into containers (max 200 per container)."""
+    entries = _auto_create_containers(
         db,
-        "ADD_DECKS",
+        color=body.color,
+        material=body.material,
+        deck_count=body.deckCount,
+        note=body.note,
         user_id=current_user.id,
-        resource_type="deck_entry",
-        resource_id=entry.id,
-        detail={"color": body.color.value, "deckCount": body.deckCount, "cardCount": entry.cardCount},
         request=request,
     )
     db.commit()
-    db.refresh(entry)
-    return entry
+    for e in entries:
+        db.refresh(e)
+    return AddDecksResponse(
+        entries=entries,
+        containersCreated=len(entries),
+        totalDecks=body.deckCount,
+        color=body.color,
+        material=body.material,
+    )
 
 
 @router.get("/decks", response_model=List[DeckEntryOut])
@@ -301,6 +451,33 @@ def get_low_stock(
 
 # ── Shoes ─────────────────────────────────────────────────────────────────────
 
+def _get_available_decks_by_material(db: Session, color: CardColor, material: CardMaterial) -> int:
+    """Available decks for a specific color+material combination."""
+    total_added = int(
+        db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
+        .filter(DeckEntry.color == color, DeckEntry.material == material)
+        .scalar()
+        or 0
+    )
+    holding_shoes = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.material == material,
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+        )
+        .scalar()
+        or 0
+    )
+    cards_destroyed_shoes = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.color == color, Shoe.material == material, Shoe.destroyedAt.isnot(None))
+        .scalar()
+        or 0
+    )
+    return total_added - (holding_shoes + cards_destroyed_shoes) * DECKS_PER_SHOE
+
+
 @router.post("/shoes", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)
 def create_shoe(
     body: CreateShoeRequest,
@@ -308,17 +485,22 @@ def create_shoe(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
-    available = _get_available_decks(db, body.color)
+    # Check availability for the specific color+material combination
+    available = _get_available_decks_by_material(db, body.color, body.material)
     if available < DECKS_PER_SHOE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Not enough {body.color.value} decks. Available: {available}, required: {DECKS_PER_SHOE}",
+            detail=(
+                f"Not enough {body.color.value} {body.material.value} decks. "
+                f"Available: {available}, required: {DECKS_PER_SHOE}"
+            ),
         )
     # Assign the next sequential shoe number (max across ALL shoes + 1)
     max_number = db.query(func.coalesce(func.max(Shoe.shoeNumber), 0)).scalar() or 0
     shoe = Shoe(
         shoeNumber=int(max_number) + 1,
         color=body.color,
+        material=body.material,
         status=ShoeStatus.IN_WAREHOUSE,
         createdById=current_user.id,
         createdAt=datetime.utcnow(),
@@ -326,10 +508,11 @@ def create_shoe(
     db.add(shoe)
     db.flush()
 
-    # FIFO container consumption (import deferred to avoid circular import)
+    # FIFO container consumption filtered by color AND material
     from app.routers.containers import consume_decks_fifo  # noqa: PLC0415
     container = consume_decks_fifo(
         db, body.color, DECKS_PER_SHOE,
+        material=body.material,
         user_id=current_user.id,
         shoe_id=shoe.id,
         request=request,
@@ -345,6 +528,7 @@ def create_shoe(
         resource_id=shoe.id,
         detail={
             "color": body.color.value,
+            "material": body.material.value,
             "decksConsumed": DECKS_PER_SHOE,
             "shoeNumber": shoe.shoeNumber,
             "containerId": container.id if container else None,

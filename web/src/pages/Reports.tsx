@@ -22,12 +22,18 @@ interface CardReportSummary {
   totalBlackCards: number
   totalRedCards: number
   totalCards: number
+  totalPlasticDecks: number
+  totalPaperDecks: number
+  totalPlasticCards: number
+  totalPaperCards: number
   shoesCreated: number
   shoesInWarehouse: number
   shoesSentToStudio: number
   shoesReturned: number
   shoesDestroyed: number
   totalShoes: number
+  plasticShoesCreated: number
+  paperShoesCreated: number
   dailyConsumption: DeckConsumptionDay[]
 }
 
@@ -132,6 +138,30 @@ export default function ReportsPage() {
                 <p className="section-title mb-1 text-rose-500">Destroyed</p>
                 <p className="text-2xl font-bold text-gray-900">{cardSummary.shoesDestroyed}</p>
                 <p className="text-xs text-gray-400 mt-0.5">shoes</p>
+              </div>
+            </div>
+
+            {/* Material Breakdown */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <div className="card-hover p-5 border-l-4 border-blue-400">
+                <p className="section-title mb-1 text-blue-600">🔷 Plastic Decks</p>
+                <p className="text-2xl font-bold text-gray-900">{cardSummary.totalPlasticDecks ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{(cardSummary.totalPlasticCards ?? 0).toLocaleString()} cards</p>
+              </div>
+              <div className="card-hover p-5 border-l-4 border-amber-400">
+                <p className="section-title mb-1 text-amber-600">📄 Paper Decks</p>
+                <p className="text-2xl font-bold text-gray-900">{cardSummary.totalPaperDecks ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{(cardSummary.totalPaperCards ?? 0).toLocaleString()} cards</p>
+              </div>
+              <div className="card-hover p-5 border-l-4 border-blue-400">
+                <p className="section-title mb-1 text-blue-600">🔷 Plastic Shoes</p>
+                <p className="text-2xl font-bold text-gray-900">{cardSummary.plasticShoesCreated ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">total shoes</p>
+              </div>
+              <div className="card-hover p-5 border-l-4 border-amber-400">
+                <p className="section-title mb-1 text-amber-600">📄 Paper Shoes</p>
+                <p className="text-2xl font-bold text-gray-900">{cardSummary.paperShoesCreated ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">total shoes</p>
               </div>
             </div>
 
