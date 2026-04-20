@@ -449,6 +449,7 @@ class SendShoeRequest(BaseModel):
 
 class ShoeOut(OrmBase):
     id: int
+    shoeNumber: int
     color: CardColor
     status: ShoeStatus
     studioId: Optional[int] = None
@@ -504,6 +505,11 @@ class DestroyShoeRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class ReplaceShoeRequest(BaseModel):
+    """Request to replace a destroyed shoe — creates a new shoe with the same display number."""
+    studioId: Optional[int] = None  # If set, the new shoe is immediately sent to this studio
+
+
 class StockForecastColor(BaseModel):
     color: CardColor
     currentDecks: int
@@ -525,4 +531,34 @@ class DashboardCardStats(BaseModel):
     recentEntries: List[DeckEntryOut]
     lowStock: DeckLowStockResponse
     forecast: StockForecastResponse
+
+
+# ── Card Reports ──────────────────────────────────────────────────────────────
+
+class ShoeStatusCount(BaseModel):
+    status: ShoeStatus
+    count: int
+
+
+class DeckConsumptionDay(BaseModel):
+    day: str
+    decksConsumed: int
+    shoesCreated: int
+    shoesReturned: int
+
+
+class CardReportSummary(BaseModel):
+    totalBlackDecks: int
+    totalRedDecks: int
+    totalDecks: int
+    totalBlackCards: int
+    totalRedCards: int
+    totalCards: int
+    shoesCreated: int
+    shoesInWarehouse: int
+    shoesSentToStudio: int
+    shoesReturned: int
+    shoesDestroyed: int
+    totalShoes: int
+    dailyConsumption: List[DeckConsumptionDay]
 

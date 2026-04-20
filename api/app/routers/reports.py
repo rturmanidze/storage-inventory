@@ -1,7 +1,7 @@
 """Reporting endpoints — CSV exports for inventory, movements, and user activity."""
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import AuditLog, Movement, MovementLine, Role, SerializedUnit, User
-from app.schemas import DashboardStats
+from app.models import AuditLog, CardColor, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, User
+from app.schemas import CardReportSummary, DashboardStats, DeckConsumptionDay
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -176,3 +176,152 @@ def get_report_summary(
             for row in daily_movements
         ],
     }
+
+
+# ── Casino Card Reports ────────────────────────────────────────────────────────
+
+CARDS_PER_DECK = 52
+DECKS_PER_SHOE = 8
+
+
+def _get_available_decks_report(db: Session, color: CardColor) -> int:
+    """Mirrors the calculation in cards.py without importing it to avoid circular deps."""
+    total_added = (
+        db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
+        .filter(DeckEntry.color == color)
+        .scalar()
+        or 0
+    )
+    consuming_shoes = (
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.status != ShoeStatus.RETURNED,
+        )
+        .scalar()
+        or 0
+    )
+    return int(total_added) - (int(consuming_shoes) * DECKS_PER_SHOE)
+
+
+@router.get("/cards/summary", response_model=CardReportSummary)
+def get_card_report_summary(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Casino card inventory summary report with daily consumption trends."""
+    black_decks = _get_available_decks_report(db, CardColor.BLACK)
+    red_decks = _get_available_decks_report(db, CardColor.RED)
+    total_decks = black_decks + red_decks
+
+    shoes_in_warehouse = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.IN_WAREHOUSE).scalar() or 0
+    )
+    shoes_sent = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.SENT_TO_STUDIO).scalar() or 0
+    )
+    shoes_returned = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.RETURNED).scalar() or 0
+    )
+    shoes_destroyed = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.DESTROYED).scalar() or 0
+    )
+    total_shoes = (
+        db.query(func.count(Shoe.id)).scalar() or 0
+    )
+
+    # Daily deck consumption over last 30 days (decks consumed = shoes created * 8 - shoes returned * 8)
+    cutoff = datetime.utcnow() - timedelta(days=30)
+
+    created_rows = (
+        db.query(
+            func.date_trunc("day", Shoe.createdAt).label("day"),
+            func.count(Shoe.id).label("shoes_created"),
+        )
+        .filter(Shoe.createdAt >= cutoff)
+        .group_by("day")
+        .order_by("day")
+        .all()
+    )
+
+    returned_rows = (
+        db.query(
+            func.date_trunc("day", Shoe.returnedAt).label("day"),
+            func.count(Shoe.id).label("shoes_returned"),
+        )
+        .filter(Shoe.returnedAt >= cutoff)
+        .group_by("day")
+        .order_by("day")
+        .all()
+    )
+
+    # Merge into a per-day dict
+    daily: dict[str, dict] = {}
+    for row in created_rows:
+        day_str = row.day.date().isoformat()
+        daily.setdefault(day_str, {"shoesCreated": 0, "shoesReturned": 0})
+        daily[day_str]["shoesCreated"] += row.shoes_created
+    for row in returned_rows:
+        day_str = row.day.date().isoformat()
+        daily.setdefault(day_str, {"shoesCreated": 0, "shoesReturned": 0})
+        daily[day_str]["shoesReturned"] += row.shoes_returned
+
+    daily_consumption = [
+        DeckConsumptionDay(
+            day=day,
+            shoesCreated=vals["shoesCreated"],
+            shoesReturned=vals["shoesReturned"],
+            decksConsumed=(vals["shoesCreated"] - vals["shoesReturned"]) * DECKS_PER_SHOE,
+        )
+        for day, vals in sorted(daily.items())
+    ]
+
+    return CardReportSummary(
+        totalBlackDecks=black_decks,
+        totalRedDecks=red_decks,
+        totalDecks=total_decks,
+        totalBlackCards=black_decks * CARDS_PER_DECK,
+        totalRedCards=red_decks * CARDS_PER_DECK,
+        totalCards=total_decks * CARDS_PER_DECK,
+        shoesCreated=int(total_shoes),
+        shoesInWarehouse=shoes_in_warehouse,
+        shoesSentToStudio=shoes_sent,
+        shoesReturned=shoes_returned,
+        shoesDestroyed=shoes_destroyed,
+        totalShoes=int(total_shoes),
+        dailyConsumption=daily_consumption,
+    )
+
+
+@router.get("/cards/shoes/csv")
+def export_destroyed_shoes_csv(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Export shoe records as CSV. Filter by status (e.g. DESTROYED)."""
+    q = db.query(Shoe)
+    if status_filter:
+        try:
+            q = q.filter(Shoe.status == ShoeStatus(status_filter))
+        except ValueError:
+            pass
+    shoes = q.order_by(Shoe.createdAt.desc()).all()
+
+    rows = []
+    for s in shoes:
+        rows.append({
+            "shoe_id": s.id,
+            "shoe_number": s.shoeNumber,
+            "color": s.color.value,
+            "status": s.status.value,
+            "created_at": s.createdAt.isoformat(),
+            "created_by": s.createdBy.username if s.createdBy else "",
+            "sent_at": s.sentAt.isoformat() if s.sentAt else "",
+            "returned_at": s.returnedAt.isoformat() if s.returnedAt else "",
+            "destroyed_at": s.destroyedAt.isoformat() if s.destroyedAt else "",
+            "destroyed_by": s.destroyedBy.username if s.destroyedBy else "",
+            "destroy_reason": s.destroyReason or "",
+            "studio": s.studio.name if s.studio else "",
+        })
+    return _csv_response(rows, "shoes_export.csv")

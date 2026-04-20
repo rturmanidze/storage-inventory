@@ -306,11 +306,17 @@ class DeckEntry(Base):
 
 
 class Shoe(Base):
-    """A shoe assembled from 8 decks of the same color."""
+    """A shoe assembled from 8 decks of the same color.
+
+    shoeNumber is a human-readable display identifier that can be reused after
+    a shoe is destroyed (via the Replace Shoe workflow).  It is separate from
+    the internal primary key ``id`` which is globally unique forever.
+    """
 
     __tablename__ = "Shoe"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    shoeNumber = Column(Integer, nullable=False, default=0)
     color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
     status = Column(
         SAEnum(ShoeStatus, name="ShoeStatus", create_type=False),

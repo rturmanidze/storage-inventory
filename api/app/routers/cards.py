@@ -17,6 +17,7 @@ from app.schemas import (
     DeckEntryOut,
     DeckLowStockResponse,
     DestroyShoeRequest,
+    ReplaceShoeRequest,
     ReturnShoeRequest,
     SendShoeRequest,
     ShoeOut,
@@ -283,7 +284,10 @@ def create_shoe(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Not enough {body.color.value} decks. Available: {available}, required: {DECKS_PER_SHOE}",
         )
+    # Assign the next sequential shoe number (max across ALL shoes + 1)
+    max_number = db.query(func.coalesce(func.max(Shoe.shoeNumber), 0)).scalar() or 0
     shoe = Shoe(
+        shoeNumber=int(max_number) + 1,
         color=body.color,
         status=ShoeStatus.IN_WAREHOUSE,
         createdById=current_user.id,
@@ -297,7 +301,7 @@ def create_shoe(
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe.id,
-        detail={"color": body.color.value, "decksConsumed": DECKS_PER_SHOE},
+        detail={"color": body.color.value, "decksConsumed": DECKS_PER_SHOE, "shoeNumber": shoe.shoeNumber},
         request=request,
     )
     db.commit()
@@ -467,6 +471,77 @@ def destroy_shoe(
     db.commit()
     db.refresh(shoe)
     return shoe
+
+
+@router.post("/shoes/{shoe_id}/replace", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)
+def replace_shoe(
+    shoe_id: int,
+    body: ReplaceShoeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Replace a destroyed shoe with a new one sharing the same display number.
+
+    Creates a brand-new Shoe entity with the same ``shoeNumber`` as the
+    destroyed shoe.  Consumes DECKS_PER_SHOE decks from inventory exactly like
+    a normal shoe creation.  Optionally sends the new shoe directly to a studio
+    if ``studioId`` is provided in the request body.
+    """
+    original = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if original.status != ShoeStatus.DESTROYED:
+        raise HTTPException(
+            status_code=400,
+            detail="Only destroyed shoes can be replaced.  Current status: " + original.status.value,
+        )
+
+    available = _get_available_decks(db, original.color)
+    if available < DECKS_PER_SHOE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Not enough {original.color.value} decks. Available: {available}, required: {DECKS_PER_SHOE}",
+        )
+
+    new_shoe = Shoe(
+        shoeNumber=original.shoeNumber,
+        color=original.color,
+        status=ShoeStatus.IN_WAREHOUSE,
+        createdById=current_user.id,
+        createdAt=datetime.utcnow(),
+    )
+
+    # Optionally send directly to a studio
+    if body.studioId is not None:
+        studio = db.query(Studio).filter(Studio.id == body.studioId).first()
+        if not studio:
+            raise HTTPException(status_code=404, detail="Studio not found")
+        new_shoe.status = ShoeStatus.SENT_TO_STUDIO
+        new_shoe.studioId = body.studioId
+        new_shoe.sentById = current_user.id
+        new_shoe.sentAt = datetime.utcnow()
+
+    db.add(new_shoe)
+    db.flush()
+    log_action(
+        db,
+        "REPLACE_SHOE",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=new_shoe.id,
+        detail={
+            "originalShoeId": shoe_id,
+            "shoeNumber": new_shoe.shoeNumber,
+            "color": new_shoe.color.value,
+            "decksConsumed": DECKS_PER_SHOE,
+            "sentToStudio": body.studioId,
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(new_shoe)
+    return new_shoe
 
 
 # ── Stock Forecast ─────────────────────────────────────────────────────────────

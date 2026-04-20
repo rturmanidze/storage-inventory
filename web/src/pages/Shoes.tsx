@@ -11,6 +11,7 @@ interface Studio {
 
 interface Shoe {
   id: number
+  shoeNumber: number
   color: 'BLACK' | 'RED'
   status: 'IN_WAREHOUSE' | 'SENT_TO_STUDIO' | 'RETURNED' | 'DESTROYED'
   studioId: number | null
@@ -261,7 +262,7 @@ export default function Shoes() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ID</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shoe #</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Studio</th>
@@ -280,7 +281,10 @@ export default function Shoes() {
                   `Created ${new Date(shoe.createdAt).toLocaleString()}`
                 return (
                   <tr key={shoe.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-gray-400 text-xs">#{shoe.id}</td>
+                    <td className="px-4 py-3 font-mono font-semibold text-gray-700">
+                      Shoe #{shoe.shoeNumber}
+                      <span className="ml-1 text-2xs text-gray-300">id:{shoe.id}</span>
+                    </td>
                     <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
                     <td className="px-4 py-3">
                       <div>

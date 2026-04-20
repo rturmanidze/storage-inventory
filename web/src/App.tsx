@@ -20,6 +20,7 @@ import UnitHistory from './pages/UnitHistory'
 import Studios from './pages/Studios'
 import Decks from './pages/Decks'
 import Shoes from './pages/Shoes'
+import DestroyedShoes from './pages/DestroyedShoes'
 
 function AppWithProviders() {
   return (
@@ -45,6 +46,7 @@ function AppWithProviders() {
               <Route path="/studios" element={<Studios />} />
               <Route path="/decks" element={<Decks />} />
               <Route path="/shoes" element={<Shoes />} />
+              <Route path="/shoes/destroyed" element={<DestroyedShoes />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

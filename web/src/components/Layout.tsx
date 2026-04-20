@@ -106,6 +106,11 @@ const icons = {
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z" />
     </svg>
   ),
+  destroyedShoes: (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+    </svg>
+  ),
   chevronLeft: (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
@@ -134,6 +139,7 @@ const navItems: NavItem[] = [
   { label: 'Studios', to: '/studios', icon: icons.studio, group: 'Card Operations' },
   { label: 'Deck Inventory', to: '/decks', icon: icons.decks, group: 'Card Operations' },
   { label: 'Shoes', to: '/shoes', icon: icons.shoes, group: 'Card Operations' },
+  { label: 'Destroyed Shoes', to: '/shoes/destroyed', icon: icons.destroyedShoes, group: 'Card Operations' },
   { label: 'Import', to: '/import', icon: icons.import, group: 'Data' },
   { label: 'Reports', to: '/reports', icon: icons.reports, managerOrAdmin: true, group: 'Analytics' },
   { label: 'Audit Log', to: '/audit', icon: icons.audit, managerOrAdmin: true, group: 'Analytics' },
