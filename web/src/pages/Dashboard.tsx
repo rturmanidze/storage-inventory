@@ -15,6 +15,8 @@ interface CardInventorySummary {
   totalCards: number
   shoesInWarehouse: number
   shoesSentToStudio: number
+  shoesReturned: number
+  shoesDestroyed: number
   totalShoes: number
 }
 
@@ -42,10 +44,27 @@ interface DeckEntry {
   createdBy: { id: number; username: string } | null
 }
 
+interface StockForecastColor {
+  color: 'BLACK' | 'RED'
+  currentDecks: number
+  avgDailyUsage: number
+  estimatedDaysToThreshold: number | null
+  estimatedDate: string | null
+  isCritical: boolean
+}
+
+interface StockForecastResponse {
+  criticalThreshold: number
+  lookbackDays: number
+  black: StockForecastColor
+  red: StockForecastColor
+}
+
 interface DashboardCardStats {
   inventory: CardInventorySummary
   recentEntries: DeckEntry[]
   lowStock: DeckLowStockResponse
+  forecast: StockForecastResponse
 }
 
 function MetricCard({
@@ -102,11 +121,57 @@ const shoeIcon = (
   </svg>
 )
 
-const alertIcon = (
+const forecastIcon = (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
   </svg>
 )
+
+function ForecastColorRow({ data, label }: { data: StockForecastColor; label: string }) {
+  const isCritical = data.isCritical
+  const hasEstimate = data.estimatedDaysToThreshold !== null && data.estimatedDaysToThreshold !== undefined
+  const daysValue = data.estimatedDaysToThreshold ?? 0
+  const urgency = isCritical ? 'critical' : (hasEstimate && daysValue <= 5 ? 'warning' : 'safe')
+
+  return (
+    <li className="px-6 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${
+            data.color === 'BLACK' ? 'bg-gray-800 text-white' : 'bg-red-100 text-red-700'
+          }`}>
+            <span className={`w-2 h-2 rounded-full inline-block ${data.color === 'BLACK' ? 'bg-gray-300' : 'bg-red-500'}`} />
+            {data.color === 'BLACK' ? 'Black' : 'Red'}
+          </span>
+          <div>
+            <p className="text-sm font-medium text-gray-900">{data.currentDecks} decks available</p>
+            <p className="text-xs text-gray-500">
+              ~{data.avgDailyUsage} decks/day avg (last 30 days)
+            </p>
+          </div>
+        </div>
+        <div className="text-right shrink-0">
+          {isCritical ? (
+            <span className="badge status-destroyed text-xs">Critical</span>
+          ) : hasEstimate ? (
+            <div>
+              <span className={`text-xs font-semibold ${urgency === 'warning' ? 'text-amber-600' : 'text-emerald-600'}`}>
+                ~{daysValue} days
+              </span>
+              {data.estimatedDate && (
+                <p className="text-2xs text-gray-400 mt-0.5">
+                  {new Date(data.estimatedDate).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          ) : (
+            <span className="text-xs text-emerald-600 font-medium">Stable</span>
+          )}
+        </div>
+      </div>
+    </li>
+  )
+}
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -136,7 +201,19 @@ export default function Dashboard() {
   }, [subscribe, queryClient])
 
   const inventory = cardStats?.inventory
-  const lowStock = cardStats?.lowStock
+  const forecast = cardStats?.forecast
+  const isCriticalAlert = forecast ? (forecast.black.isCritical || forecast.red.isCritical) : false
+  const minDaysToThreshold = forecast
+    ? Math.min(
+        forecast.black.estimatedDaysToThreshold ?? Infinity,
+        forecast.red.estimatedDaysToThreshold ?? Infinity,
+      )
+    : Infinity
+  const forecastSub = isCriticalAlert
+    ? 'Below critical threshold!'
+    : minDaysToThreshold !== Infinity
+    ? `~${Math.round(minDaysToThreshold)} days to critical`
+    : 'Stock stable'
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -168,7 +245,7 @@ export default function Dashboard() {
               sub={`${(inventory?.blackCards ?? 0).toLocaleString()} cards`}
               accent="bg-gray-800 text-white"
               onClick={() => navigate('/decks?color=BLACK')}
-              alert={lowStock?.black.isLow}
+              alert={forecast?.black.isCritical}
               icon={deckIcon}
             />
             <MetricCard
@@ -177,17 +254,17 @@ export default function Dashboard() {
               sub={`${(inventory?.redCards ?? 0).toLocaleString()} cards`}
               accent="bg-red-50 text-red-600"
               onClick={() => navigate('/decks?color=RED')}
-              alert={lowStock?.red.isLow}
+              alert={forecast?.red.isCritical}
               icon={deckIcon}
             />
             <MetricCard
-              label="Low Stock Alerts"
-              value={lowStock?.alertCount ?? 0}
-              sub={lowStock?.hasAlerts ? 'colors below threshold' : 'all colors above threshold'}
-              accent={lowStock?.hasAlerts ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}
-              onClick={() => navigate('/decks?lowStock=true')}
-              alert={lowStock?.hasAlerts}
-              icon={alertIcon}
+              label="Stock Forecast"
+              value={isCriticalAlert ? 'Critical!' : minDaysToThreshold !== Infinity ? `${Math.round(minDaysToThreshold)}d` : '—'}
+              sub={forecastSub}
+              accent={isCriticalAlert ? 'bg-red-50 text-red-600' : minDaysToThreshold <= 5 ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}
+              onClick={() => navigate('/decks')}
+              alert={isCriticalAlert || minDaysToThreshold <= 5}
+              icon={forecastIcon}
             />
             <MetricCard
               label="Shoes in Warehouse"
@@ -199,77 +276,41 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Low Stock Detail + Recent Deck Entries */}
+          {/* Stock Forecast + Recent Deck Entries */}
           <div className="grid lg:grid-cols-2 gap-6">
-            {/* Deck Low Stock Alerts */}
+            {/* Stock Forecast Widget */}
             <div className="card overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
                 <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <svg className="w-4 h-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                  <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
                   </svg>
-                  Deck Low Stock Alerts
+                  Stock Forecast
                 </h2>
                 <button
                   className="text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
-                  onClick={() => navigate('/decks?lowStock=true')}
+                  onClick={() => navigate('/decks')}
                 >
                   View inventory →
                 </button>
               </div>
-              {!lowStock?.hasAlerts ? (
-                <div className="px-6 py-8 text-center">
-                  <svg className="w-8 h-8 text-emerald-200 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                  </svg>
-                  <p className="text-sm text-gray-400">All deck colors above minimum threshold</p>
-                  <p className="text-xs text-gray-300 mt-1">Threshold: {lowStock?.black.threshold ?? 16} decks per color</p>
+              {forecast ? (
+                <div>
+                  <div className="px-6 py-3 bg-gray-50 border-b border-gray-100">
+                    <p className="text-xs text-gray-500">
+                      Critical threshold: <span className="font-semibold text-gray-700">{forecast.criticalThreshold} decks</span>
+                      {' · '}Based on last <span className="font-semibold text-gray-700">{forecast.lookbackDays} days</span> usage
+                    </p>
+                  </div>
+                  <ul className="divide-y divide-gray-50">
+                    <ForecastColorRow data={forecast.black} label="Black" />
+                    <ForecastColorRow data={forecast.red} label="Red" />
+                  </ul>
                 </div>
               ) : (
-                <ul className="divide-y divide-gray-50">
-                  {lowStock && (
-                    <>
-                      {lowStock.black.isLow && (
-                        <li
-                          className="px-6 py-4 flex items-center justify-between hover:bg-surface-secondary transition-colors cursor-pointer"
-                          onClick={() => navigate('/decks?color=BLACK')}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-800 text-white">
-                              <span className="w-2 h-2 rounded-full inline-block bg-gray-300" /> Black
-                            </span>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">Black Decks Low</p>
-                              <p className="text-xs text-gray-500">{lowStock.black.available.toLocaleString()} decks available</p>
-                            </div>
-                          </div>
-                          <span className="badge status-destroyed shrink-0 ml-3">
-                            {lowStock.black.available} / {lowStock.black.threshold}
-                          </span>
-                        </li>
-                      )}
-                      {lowStock.red.isLow && (
-                        <li
-                          className="px-6 py-4 flex items-center justify-between hover:bg-surface-secondary transition-colors cursor-pointer"
-                          onClick={() => navigate('/decks?color=RED')}
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                              <span className="w-2 h-2 rounded-full inline-block bg-red-500" /> Red
-                            </span>
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">Red Decks Low</p>
-                              <p className="text-xs text-gray-500">{lowStock.red.available.toLocaleString()} decks available</p>
-                            </div>
-                          </div>
-                          <span className="badge status-destroyed shrink-0 ml-3">
-                            {lowStock.red.available} / {lowStock.red.threshold}
-                          </span>
-                        </li>
-                      )}
-                    </>
-                  )}
-                </ul>
+                <div className="px-6 py-8 text-center">
+                  <p className="text-sm text-gray-400">No forecast data available</p>
+                </div>
               )}
             </div>
 
@@ -345,19 +386,19 @@ export default function Dashboard() {
                 icon={shoeIcon}
               />
               <MetricCard
-                label="Total Shoes"
-                value={inventory?.totalShoes ?? 0}
-                sub="warehouse + studios"
-                accent="bg-indigo-50 text-indigo-600"
-                onClick={() => navigate('/shoes')}
+                label="Shoes Returned"
+                value={inventory?.shoesReturned ?? 0}
+                sub="back from studios"
+                accent="bg-teal-50 text-teal-600"
+                onClick={() => navigate('/shoes?status=RETURNED')}
                 icon={shoeIcon}
               />
               <MetricCard
-                label="Shoes Possible"
-                value={inventory ? Math.floor(inventory.totalDecks / 8) : 0}
-                sub="from available decks"
-                accent="bg-purple-50 text-purple-600"
-                onClick={() => navigate('/shoes')}
+                label="Shoes Destroyed"
+                value={inventory?.shoesDestroyed ?? 0}
+                sub="permanently removed"
+                accent="bg-rose-50 text-rose-600"
+                onClick={() => navigate('/shoes?status=DESTROYED')}
                 icon={shoeIcon}
               />
             </div>

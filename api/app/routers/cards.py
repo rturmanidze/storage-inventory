@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -16,8 +16,12 @@ from app.schemas import (
     DeckColorStatus,
     DeckEntryOut,
     DeckLowStockResponse,
+    DestroyShoeRequest,
+    ReturnShoeRequest,
     SendShoeRequest,
     ShoeOut,
+    StockForecastColor,
+    StockForecastResponse,
 )
 
 router = APIRouter(prefix="/cards", tags=["cards"])
@@ -26,25 +30,61 @@ router = APIRouter(prefix="/cards", tags=["cards"])
 DECKS_PER_SHOE = 8    # 1 shoe holds exactly 8 decks
 CARDS_PER_DECK = 52   # 1 standard deck = 52 cards (no jokers)
 
-# Minimum deck count per color before a low-stock alert is raised
+# Critical threshold for predictive stock alerts
+CRITICAL_DECK_THRESHOLD = 200  # total decks across both colors
+
+# Legacy per-color threshold (kept for backward-compatible /low-stock endpoint)
 LOW_STOCK_THRESHOLD = 16  # 2 shoes worth of decks per color
+
+# Number of days used to calculate the average daily consumption rate
+FORECAST_LOOKBACK_DAYS = 30
 
 
 def _get_available_decks(db: Session, color: CardColor) -> int:
-    """Return current available deck count for a given color."""
+    """Return current available deck count for a given color.
+
+    Available decks = total added via DeckEntry
+                    - (active shoes * DECKS_PER_SHOE)
+
+    'Active' means the shoe is currently holding decks (IN_WAREHOUSE or
+    SENT_TO_STUDIO).  RETURNED shoes have given their decks back to the
+    pool; DESTROYED shoes are permanently removed from circulation
+    (their decks were already subtracted when the shoe was created, and
+    returning a RETURNED shoe then destroying it re-subtracts those decks).
+
+    Formula: available = total_added - (all_non_returned_non_destroyed +
+             destroyed_from_warehouse_or_studio) * 8
+    Simplified: available = total_added - (shoes NOT in RETURNED status) * 8
+    Wait — DESTROYED shoes should also reduce the pool permanently.
+
+    Correct accounting:
+    - IN_WAREHOUSE: shoe holds 8 decks (pool -8)
+    - SENT_TO_STUDIO: shoe holds 8 decks (pool -8)
+    - RETURNED: shoe gave decks back (pool +8 relative to creation)
+    - DESTROYED: pool depends on prior state:
+        - was IN_WAREHOUSE/SENT_TO_STUDIO → decks gone (pool -8, same as creation, no change)
+        - was RETURNED → decks were back in pool, now destroyed (pool -8)
+
+    Net formula: available = total_added - (IN_WAREHOUSE + SENT_TO_STUDIO + DESTROYED) * 8
+    RETURNED shoes do NOT consume from the deck pool.
+    """
     total_added = (
         db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
         .filter(DeckEntry.color == color)
         .scalar()
         or 0
     )
-    shoes_created = (
+    # Shoes that consume deck pool: everything except RETURNED
+    consuming_shoes = (
         db.query(func.count(Shoe.id))
-        .filter(Shoe.color == color)
+        .filter(
+            Shoe.color == color,
+            Shoe.status != ShoeStatus.RETURNED,
+        )
         .scalar()
         or 0
     )
-    return int(total_added) - (int(shoes_created) * DECKS_PER_SHOE)
+    return int(total_added) - (int(consuming_shoes) * DECKS_PER_SHOE)
 
 
 def _build_inventory_summary(db: Session) -> CardInventorySummary:
@@ -56,7 +96,13 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
     shoes_sent = (
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.SENT_TO_STUDIO).scalar() or 0
     )
-    total_shoes = int(shoes_in_warehouse) + int(shoes_sent)
+    shoes_returned = (
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.RETURNED).scalar() or 0
+    )
+    shoes_destroyed = (
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.DESTROYED).scalar() or 0
+    )
+    total_shoes = int(shoes_in_warehouse) + int(shoes_sent) + int(shoes_returned) + int(shoes_destroyed)
     return CardInventorySummary(
         blackDecks=black_decks,
         redDecks=red_decks,
@@ -66,7 +112,72 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         totalCards=(black_decks + red_decks) * CARDS_PER_DECK,
         shoesInWarehouse=int(shoes_in_warehouse),
         shoesSentToStudio=int(shoes_sent),
+        shoesReturned=int(shoes_returned),
+        shoesDestroyed=int(shoes_destroyed),
         totalShoes=total_shoes,
+    )
+
+
+def _build_forecast_color(
+    db: Session,
+    color: CardColor,
+    current_decks: int,
+    lookback_days: int,
+    critical_threshold: int,
+) -> StockForecastColor:
+    """Calculate predictive stock forecast for a single deck color."""
+    since = datetime.utcnow() - timedelta(days=lookback_days)
+
+    # Shoes created (consumed decks) in the lookback window
+    shoes_created = (
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.color == color, Shoe.createdAt >= since)
+        .scalar()
+        or 0
+    )
+    # Shoes returned (restored decks) in the lookback window
+    shoes_returned = (
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.color == color, Shoe.returnedAt >= since)
+        .scalar()
+        or 0
+    )
+
+    net_decks_consumed = (int(shoes_created) - int(shoes_returned)) * DECKS_PER_SHOE
+    avg_daily_usage = net_decks_consumed / lookback_days if lookback_days > 0 else 0.0
+
+    is_critical = current_decks < critical_threshold
+    estimated_days: Optional[float] = None
+    estimated_date: Optional[datetime] = None
+
+    if avg_daily_usage > 0 and current_decks > critical_threshold:
+        estimated_days = (current_decks - critical_threshold) / avg_daily_usage
+        estimated_date = datetime.utcnow() + timedelta(days=estimated_days)
+    elif avg_daily_usage <= 0:
+        # No net consumption — stock is stable or growing
+        estimated_days = None
+        estimated_date = None
+
+    return StockForecastColor(
+        color=color,
+        currentDecks=current_decks,
+        avgDailyUsage=round(avg_daily_usage, 2),
+        estimatedDaysToThreshold=round(estimated_days, 1) if estimated_days is not None else None,
+        estimatedDate=estimated_date,
+        isCritical=is_critical,
+    )
+
+
+def _build_forecast(db: Session) -> StockForecastResponse:
+    black_decks = _get_available_decks(db, CardColor.BLACK)
+    red_decks = _get_available_decks(db, CardColor.RED)
+    black_forecast = _build_forecast_color(db, CardColor.BLACK, black_decks, FORECAST_LOOKBACK_DAYS, CRITICAL_DECK_THRESHOLD)
+    red_forecast = _build_forecast_color(db, CardColor.RED, red_decks, FORECAST_LOOKBACK_DAYS, CRITICAL_DECK_THRESHOLD)
+    return StockForecastResponse(
+        criticalThreshold=CRITICAL_DECK_THRESHOLD,
+        lookbackDays=FORECAST_LOOKBACK_DAYS,
+        black=black_forecast,
+        red=red_forecast,
     )
 
 
@@ -237,6 +348,10 @@ def send_shoe_to_studio(
         raise HTTPException(status_code=404, detail="Shoe not found")
     if shoe.status == ShoeStatus.SENT_TO_STUDIO:
         raise HTTPException(status_code=400, detail="Shoe has already been sent to a studio")
+    if shoe.status == ShoeStatus.DESTROYED:
+        raise HTTPException(status_code=400, detail="Cannot send a destroyed shoe to a studio")
+    if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED):
+        raise HTTPException(status_code=400, detail="Shoe is not in a sendable state")
 
     studio = db.query(Studio).filter(Studio.id == body.studioId).first()
     if not studio:
@@ -259,3 +374,112 @@ def send_shoe_to_studio(
     db.commit()
     db.refresh(shoe)
     return shoe
+
+
+@router.post("/shoes/{shoe_id}/return-from-studio", response_model=ShoeOut)
+def return_shoe_from_studio(
+    shoe_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Return a shoe from a studio back to the warehouse deck pool.
+
+    Restores DECKS_PER_SHOE decks to the available inventory.
+    Only shoes with status SENT_TO_STUDIO can be returned.
+    """
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status == ShoeStatus.DESTROYED:
+        raise HTTPException(status_code=400, detail="Cannot return a destroyed shoe")
+    if shoe.status == ShoeStatus.RETURNED:
+        raise HTTPException(status_code=400, detail="Shoe has already been returned")
+    if shoe.status != ShoeStatus.SENT_TO_STUDIO:
+        raise HTTPException(
+            status_code=400,
+            detail="Only shoes currently in a studio (SENT_TO_STUDIO) can be returned",
+        )
+
+    shoe.status = ShoeStatus.RETURNED
+    shoe.returnedById = current_user.id
+    shoe.returnedAt = datetime.utcnow()
+
+    log_action(
+        db,
+        "RETURN_SHOE_FROM_STUDIO",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={
+            "studioId": shoe.studioId,
+            "color": shoe.color.value,
+            "decksRestored": DECKS_PER_SHOE,
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
+
+
+@router.post("/shoes/{shoe_id}/destroy", response_model=ShoeOut)
+def destroy_shoe(
+    shoe_id: int,
+    body: DestroyShoeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Permanently destroy a shoe (mark as DESTROYED).
+
+    - Cannot destroy an already-destroyed shoe.
+    - Cannot destroy a shoe that is currently in a studio (must be returned first).
+    - Decks for a RETURNED shoe are permanently removed from the pool.
+    - Decks for an IN_WAREHOUSE shoe are permanently removed (no change needed
+      since they were consumed on creation and never returned).
+    """
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status == ShoeStatus.DESTROYED:
+        raise HTTPException(status_code=400, detail="Shoe has already been destroyed")
+    if shoe.status == ShoeStatus.SENT_TO_STUDIO:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot destroy a shoe that is currently in a studio. Return it first.",
+        )
+
+    shoe.status = ShoeStatus.DESTROYED
+    shoe.destroyedById = current_user.id
+    shoe.destroyedAt = datetime.utcnow()
+    shoe.destroyReason = body.reason
+
+    log_action(
+        db,
+        "DESTROY_SHOE",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={"color": shoe.color.value, "reason": body.reason},
+        request=request,
+    )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
+
+
+# ── Stock Forecast ─────────────────────────────────────────────────────────────
+
+@router.get("/forecast", response_model=StockForecastResponse)
+def get_stock_forecast(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Predictive stock forecast based on historical consumption rate.
+
+    Returns the estimated number of days until deck inventory falls below
+    the critical threshold (CRITICAL_DECK_THRESHOLD) based on average
+    daily usage over the past FORECAST_LOOKBACK_DAYS days.
+    """
+    return _build_forecast(db)

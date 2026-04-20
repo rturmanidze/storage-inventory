@@ -454,11 +454,18 @@ class ShoeOut(OrmBase):
     studioId: Optional[int] = None
     createdById: Optional[int] = None
     sentById: Optional[int] = None
+    returnedById: Optional[int] = None
+    destroyedById: Optional[int] = None
     createdAt: datetime
     sentAt: Optional[datetime] = None
+    returnedAt: Optional[datetime] = None
+    destroyedAt: Optional[datetime] = None
+    destroyReason: Optional[str] = None
     studio: Optional[StudioOut] = None
     createdBy: Optional[MovementCreatedByOut] = None
     sentBy: Optional[MovementCreatedByOut] = None
+    returnedBy: Optional[MovementCreatedByOut] = None
+    destroyedBy: Optional[MovementCreatedByOut] = None
 
 
 class CardInventorySummary(BaseModel):
@@ -470,6 +477,8 @@ class CardInventorySummary(BaseModel):
     totalCards: int
     shoesInWarehouse: int
     shoesSentToStudio: int
+    shoesReturned: int
+    shoesDestroyed: int
     totalShoes: int
 
 
@@ -487,8 +496,33 @@ class DeckLowStockResponse(BaseModel):
     alertCount: int
 
 
+class ReturnShoeRequest(BaseModel):
+    pass  # No additional fields required; user is derived from JWT
+
+
+class DestroyShoeRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class StockForecastColor(BaseModel):
+    color: CardColor
+    currentDecks: int
+    avgDailyUsage: float
+    estimatedDaysToThreshold: Optional[float] = None
+    estimatedDate: Optional[datetime] = None
+    isCritical: bool
+
+
+class StockForecastResponse(BaseModel):
+    criticalThreshold: int
+    lookbackDays: int
+    black: StockForecastColor
+    red: StockForecastColor
+
+
 class DashboardCardStats(BaseModel):
     inventory: CardInventorySummary
     recentEntries: List[DeckEntryOut]
     lowStock: DeckLowStockResponse
+    forecast: StockForecastResponse
 

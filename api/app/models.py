@@ -271,6 +271,8 @@ class CardColor(str, enum.Enum):
 class ShoeStatus(str, enum.Enum):
     IN_WAREHOUSE = "IN_WAREHOUSE"
     SENT_TO_STUDIO = "SENT_TO_STUDIO"
+    RETURNED = "RETURNED"
+    DESTROYED = "DESTROYED"
 
 
 class Studio(Base):
@@ -318,9 +320,16 @@ class Shoe(Base):
     studioId = Column(Integer, ForeignKey("Studio.id", ondelete="SET NULL"), nullable=True)
     createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
     sentById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    returnedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    destroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     sentAt = Column(DateTime, nullable=True)
+    returnedAt = Column(DateTime, nullable=True)
+    destroyedAt = Column(DateTime, nullable=True)
+    destroyReason = Column(Text, nullable=True)
 
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
     sentBy = relationship("User", foreign_keys=[sentById])
+    returnedBy = relationship("User", foreign_keys=[returnedById])
+    destroyedBy = relationship("User", foreign_keys=[destroyedById])
