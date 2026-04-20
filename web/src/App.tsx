@@ -11,13 +11,9 @@ import Items from './pages/Items'
 import ItemDetail from './pages/ItemDetail'
 import Warehouses from './pages/Warehouses'
 import Locations from './pages/Locations'
-import IssuedTo from './pages/IssuedTo'
 import Units from './pages/Units'
 import Users from './pages/Users'
 import Receive from './pages/movements/Receive'
-import Transfer from './pages/movements/Transfer'
-import Issue from './pages/movements/Issue'
-import Return from './pages/movements/Return'
 import Import from './pages/Import'
 import AuditLog from './pages/AuditLog'
 import Reports from './pages/Reports'
@@ -38,14 +34,10 @@ function AppWithProviders() {
               <Route path="/items/:id" element={<ItemDetail />} />
               <Route path="/warehouses" element={<Warehouses />} />
               <Route path="/warehouses/:id/locations" element={<Locations />} />
-              <Route path="/issued-to" element={<IssuedTo />} />
               <Route path="/units" element={<Units />} />
               <Route path="/units/:unitId/history" element={<UnitHistory />} />
               <Route path="/users" element={<Users />} />
               <Route path="/movements/receive" element={<Receive />} />
-              <Route path="/movements/transfer" element={<Transfer />} />
-              <Route path="/movements/issue" element={<Issue />} />
-              <Route path="/movements/return" element={<Return />} />
               <Route path="/import" element={<Import />} />
               <Route path="/audit" element={<AuditLog />} />
               <Route path="/reports" element={<Reports />} />

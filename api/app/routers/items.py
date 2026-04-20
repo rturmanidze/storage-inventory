@@ -1,12 +1,13 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Item, ItemBarcode, User
+from app.models import Item, ItemBarcode, SerializedUnit, UnitStatus, User
 from app.schemas import BarcodeCreate, BarcodeOut, ItemCreate, ItemCreateWithBarcode, ItemOut, ItemUpdate
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/items", tags=["items"])
 @router.get("", response_model=List[ItemOut])
 def list_items(
     search: Optional[str] = Query(None),
+    low_stock: Optional[bool] = Query(None, alias="lowStock"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -23,6 +25,18 @@ def list_items(
         pattern = f"%{search}%"
         q = q.filter(
             Item.sku.ilike(pattern) | Item.name.ilike(pattern) | Item.category.ilike(pattern)
+        )
+    if low_stock:
+        # Return only items whose in-stock count is below their minStock threshold
+        in_stock_subq = (
+            db.query(SerializedUnit.itemId, func.count(SerializedUnit.id).label("cnt"))
+            .filter(SerializedUnit.status == UnitStatus.IN_STOCK)
+            .group_by(SerializedUnit.itemId)
+            .subquery()
+        )
+        q = q.outerjoin(in_stock_subq, Item.id == in_stock_subq.c.itemId).filter(
+            Item.minStock > 0,
+            (func.coalesce(in_stock_subq.c.cnt, 0)) < Item.minStock,
         )
     return q.all()
 

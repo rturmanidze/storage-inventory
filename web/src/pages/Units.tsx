@@ -29,6 +29,7 @@ export default function Units() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [serial, setSerial] = useState(searchParams.get('serial') ?? '')
   const [sku, setSku] = useState('')
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? '')
   const [results, setResults] = useState<Unit[]>([])
   const [loading, setLoading] = useState(false)
   const [statusTarget, setStatusTarget] = useState<{ unit: Unit; newStatus: string } | null>(null)
@@ -40,19 +41,23 @@ export default function Units() {
 
   useEffect(() => {
     const s = searchParams.get('serial')
-    if (s) {
-      setSerial(s)
-      doSearch(s, '')
+    const st = searchParams.get('status')
+    if (s) setSerial(s)
+    if (st) setStatusFilter(st)
+    if (s || st) {
+      doSearch(s ?? '', '', st ?? '')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function doSearch(serialVal: string, skuVal: string) {
+  async function doSearch(serialVal: string, skuVal: string, statusVal?: string) {
     setLoading(true)
     try {
       const params: Record<string, string> = {}
       if (serialVal.trim()) params.serial = serialVal.trim()
       if (skuVal.trim()) params.sku = skuVal.trim()
+      const sv = statusVal !== undefined ? statusVal : statusFilter
+      if (sv.trim()) params.status = sv.trim()
       const res = await api.get<Unit[]>('/units', { params })
       setResults(res.data)
       if (res.data.length === 0) toast('No units found', { icon: 'ℹ️' })
@@ -68,8 +73,9 @@ export default function Units() {
     const params: Record<string, string> = {}
     if (serial.trim()) params.serial = serial.trim()
     if (sku.trim()) params.sku = sku.trim()
+    if (statusFilter.trim()) params.status = statusFilter.trim()
     setSearchParams(params)
-    doSearch(serial, sku)
+    doSearch(serial, sku, statusFilter)
   }
 
   async function confirmStatusChange() {
@@ -140,6 +146,23 @@ export default function Units() {
               className="input"
               placeholder="Filter by item SKU…"
             />
+          </div>
+          <div className="flex-1">
+            <label className="label">Status (optional)</label>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="input"
+            >
+              <option value="">All statuses</option>
+              <option value="IN_STOCK">In Stock</option>
+              <option value="DAMAGED">Damaged</option>
+              <option value="EXPIRED">Expired</option>
+              <option value="DESTROYED">Destroyed</option>
+              <option value="QUARANTINED">Quarantined</option>
+              <option value="SCRAPPED">Scrapped</option>
+              <option value="ISSUED">Issued</option>
+            </select>
           </div>
           <div className="flex items-end">
             <button type="submit" disabled={loading} className="btn-primary w-full sm:w-auto">

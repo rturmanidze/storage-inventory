@@ -9,11 +9,9 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import Item, Movement, MovementLine, MovementType, SerializedUnit, UnitStatus, User
 from app.schemas import (
-    IssueMovementRequest,
     MovementOut,
     ReceiveMovementRequest,
     ReturnMovementRequest,
-    TransferMovementRequest,
 )
 from app.websocket import manager as ws_manager
 
@@ -98,128 +96,14 @@ async def receive(
     return movement
 
 
-@router.post("/transfer", response_model=MovementOut, status_code=status.HTTP_201_CREATED)
-async def transfer(
-    body: TransferMovementRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    lines = []
-    item_ids: set[int] = set()
-    for line in body.lines:
-        unit = db.query(SerializedUnit).filter(SerializedUnit.serial == line.serial).first()
-        if not unit:
-            raise HTTPException(status_code=404, detail=f"Serial {line.serial} not found")
-        if unit.status == UnitStatus.DESTROYED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unit {line.serial} is destroyed and cannot be transferred",
-            )
-        if unit.status != UnitStatus.IN_STOCK:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unit {line.serial} cannot be transferred: status is {unit.status}",
-            )
-        from_location_id = unit.currentLocationId
-        unit.currentLocationId = line.toLocationId
-        db.flush()
-        item_ids.add(unit.itemId)
-        lines.append(
-            MovementLine(
-                serialUnitId=unit.id,
-                fromLocationId=from_location_id,
-                toLocationId=line.toLocationId,
-            )
-        )
-
-    movement = Movement(
-        type=MovementType.TRANSFER,
-        note=body.note,
-        createdById=current_user.id,
-        lines=lines,
-    )
-    db.add(movement)
-    db.flush()
-    log_action(
-        db,
-        "TRANSFER",
-        user_id=current_user.id,
-        resource_type="movement",
-        resource_id=movement.id,
-        detail={"lineCount": len(lines), "note": body.note},
-        request=request,
-    )
-    db.commit()
-    db.refresh(movement)
-
-    await _broadcast_movement(movement)
-    return movement
+@router.post("/transfer", status_code=status.HTTP_410_GONE)
+async def transfer(*_args, **_kwargs):
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Transfer feature has been disabled")
 
 
-@router.post("/issue", response_model=MovementOut, status_code=status.HTTP_201_CREATED)
-async def issue(
-    body: IssueMovementRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    lines = []
-    item_ids: set[int] = set()
-    for line in body.lines:
-        unit = db.query(SerializedUnit).filter(SerializedUnit.serial == line.serial).first()
-        if not unit:
-            raise HTTPException(status_code=404, detail=f"Serial {line.serial} not found")
-        if unit.status == UnitStatus.DESTROYED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unit {line.serial} is destroyed and cannot be issued",
-            )
-        if unit.status == UnitStatus.ISSUED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Unit {line.serial} is already issued",
-            )
-        from_location_id = unit.currentLocationId
-        unit.status = UnitStatus.ISSUED
-        unit.currentLocationId = None
-        db.flush()
-        item_ids.add(unit.itemId)
-        lines.append(
-            MovementLine(
-                serialUnitId=unit.id,
-                fromLocationId=from_location_id,
-                issuedToId=body.issuedToId,
-            )
-        )
-
-    movement = Movement(
-        type=MovementType.ISSUE,
-        note=body.note,
-        createdById=current_user.id,
-        lines=lines,
-    )
-    db.add(movement)
-    db.flush()
-    log_action(
-        db,
-        "ISSUE",
-        user_id=current_user.id,
-        resource_type="movement",
-        resource_id=movement.id,
-        detail={"issuedToId": body.issuedToId, "lineCount": len(lines), "note": body.note},
-        request=request,
-    )
-    db.commit()
-    db.refresh(movement)
-
-    await _broadcast_movement(movement)
-    for iid in item_ids:
-        low = _check_low_stock(db, iid)
-        if low:
-            await ws_manager.broadcast({"event": "low_stock_alert", **low})
-
-    return movement
+@router.post("/issue", status_code=status.HTTP_410_GONE)
+async def issue(*_args, **_kwargs):
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Issue Items feature has been disabled")
 
 
 @router.post("/return", response_model=MovementOut, status_code=status.HTTP_201_CREATED)

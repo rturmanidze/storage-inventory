@@ -75,15 +75,23 @@ function MetricCard({
   sub,
   icon,
   accent,
+  onClick,
 }: {
   label: string
   value: string | number
   sub?: string
   icon: React.ReactNode
   accent: string
+  onClick?: () => void
 }) {
   return (
-    <div className="card-hover p-5 flex items-start gap-4">
+    <div
+      className={`card-hover p-5 flex items-start gap-4 ${onClick ? 'cursor-pointer' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick() } : undefined}
+    >
       <div className={`flex items-center justify-center w-11 h-11 rounded-xl ${accent} shrink-0`}>
         {icon}
       </div>
@@ -92,6 +100,11 @@ function MetricCard({
         <p className="mt-0.5 text-2xl font-bold text-gray-900">{value}</p>
         {sub && <p className="mt-0.5 text-xs text-gray-500">{sub}</p>}
       </div>
+      {onClick && (
+        <svg className="w-4 h-4 text-gray-300 ml-auto shrink-0 self-center" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+        </svg>
+      )}
     </div>
   )
 }
@@ -135,7 +148,7 @@ export default function Dashboard() {
   const total = stats?.totalUnits ?? 0
   const breakdown = stats?.statusBreakdown ?? defaultBreakdown
   const inStock = breakdown.IN_STOCK ?? 0
-  const inUse = breakdown.ISSUED ?? 0
+  const damaged = (breakdown.DAMAGED ?? 0) + (breakdown.EXPIRED ?? 0) + (breakdown.DESTROYED ?? 0)
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -166,6 +179,7 @@ export default function Dashboard() {
               value={total}
               sub="all serialized units"
               accent="bg-primary-50 text-primary-600"
+              onClick={() => navigate('/units')}
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
@@ -173,10 +187,11 @@ export default function Dashboard() {
               }
             />
             <MetricCard
-              label="Active"
+              label="In Stock"
               value={inStock}
               sub={total ? `${Math.round((inStock / total) * 100)}% of total` : '—'}
               accent="bg-emerald-50 text-emerald-600"
+              onClick={() => navigate('/units?status=IN_STOCK')}
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -184,13 +199,14 @@ export default function Dashboard() {
               }
             />
             <MetricCard
-              label="In Use / Issued"
-              value={inUse}
-              sub={total ? `${Math.round((inUse / total) * 100)}% of total` : '—'}
-              accent="bg-blue-50 text-blue-600"
+              label="Damaged / Expired / Destroyed"
+              value={damaged}
+              sub={total ? `${Math.round((damaged / total) * 100)}% of total` : '—'}
+              accent="bg-red-50 text-red-600"
+              onClick={() => navigate('/units?status=DAMAGED')}
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                 </svg>
               }
             />
@@ -198,7 +214,8 @@ export default function Dashboard() {
               label="Low Stock Alerts"
               value={stats?.lowStockItems.length ?? 0}
               sub="items below minimum"
-              accent="bg-red-50 text-red-600"
+              accent="bg-amber-50 text-amber-600"
+              onClick={() => navigate('/items?lowStock=true')}
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
@@ -217,20 +234,26 @@ export default function Dashboard() {
                     count > 0 ? (
                       <div
                         key={status}
-                        className={`${STATUS_COLORS[status]?.bar ?? 'bg-gray-300'} transition-all duration-500 first:rounded-l-full last:rounded-r-full`}
+                        className={`${STATUS_COLORS[status]?.bar ?? 'bg-gray-300'} transition-all duration-500 first:rounded-l-full last:rounded-r-full cursor-pointer hover:opacity-80`}
                         style={{ width: `${(count / total) * 100}%` }}
-                        title={`${STATUS_LABELS[status]}: ${count}`}
+                        title={`${STATUS_LABELS[status]}: ${count} — click to view`}
+                        onClick={() => navigate(`/units?status=${status}`)}
                       />
                     ) : null
                   )}
                 </div>
                 <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4">
                   {(Object.entries(breakdown) as [string, number][]).map(([status, count]) => (
-                    <div key={status} className="flex items-center gap-2 text-xs text-gray-600">
+                    <button
+                      key={status}
+                      className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-900 transition-colors"
+                      onClick={() => navigate(`/units?status=${status}`)}
+                      title={`View ${STATUS_LABELS[status]} units`}
+                    >
                       <span className={`badge-dot ${STATUS_COLORS[status]?.dot ?? 'bg-gray-300'}`} />
                       <span>{STATUS_LABELS[status]}</span>
                       <span className="font-semibold text-gray-900">{count}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </>
@@ -251,7 +274,7 @@ export default function Dashboard() {
                 </h2>
                 <button
                   className="text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
-                  onClick={() => navigate('/items')}
+                  onClick={() => navigate('/items?lowStock=true')}
                 >
                   View all →
                 </button>
@@ -266,7 +289,11 @@ export default function Dashboard() {
               ) : (
                 <ul className="divide-y divide-gray-50">
                   {stats?.lowStockItems.map(item => (
-                    <li key={item.id} className="px-6 py-3 flex items-center justify-between hover:bg-surface-secondary transition-colors">
+                    <li
+                      key={item.id}
+                      className="px-6 py-3 flex items-center justify-between hover:bg-surface-secondary transition-colors cursor-pointer"
+                      onClick={() => navigate(`/items/${item.id}`)}
+                    >
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
                         <p className="text-xs text-gray-500">{item.sku} · {item.category ?? 'No category'}</p>
@@ -289,6 +316,12 @@ export default function Dashboard() {
                   </svg>
                   Recent Activity
                 </h2>
+                <button
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700 transition-colors"
+                  onClick={() => navigate('/audit')}
+                >
+                  View all →
+                </button>
               </div>
               {stats?.recentMovements.length === 0 ? (
                 <div className="px-6 py-8 text-center">
@@ -345,35 +378,35 @@ export default function Dashboard() {
                   ),
                 },
                 {
-                  label: 'Transfer',
-                  to: '/movements/transfer',
-                  color: 'hover:border-blue-300 hover:bg-blue-50/50',
-                  iconColor: 'bg-blue-50 text-blue-600',
+                  label: 'View Inventory',
+                  to: '/units',
+                  color: 'hover:border-primary-300 hover:bg-primary-50/50',
+                  iconColor: 'bg-primary-50 text-primary-600',
                   icon: (
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
                     </svg>
                   ),
                 },
                 {
-                  label: 'Issue Items',
-                  to: '/movements/issue',
-                  color: 'hover:border-amber-300 hover:bg-amber-50/50',
-                  iconColor: 'bg-amber-50 text-amber-600',
+                  label: 'Audit Log',
+                  to: '/audit',
+                  color: 'hover:border-indigo-300 hover:bg-indigo-50/50',
+                  iconColor: 'bg-indigo-50 text-indigo-600',
                   icon: (
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
                     </svg>
                   ),
                 },
                 {
-                  label: 'Return Items',
-                  to: '/movements/return',
+                  label: 'Reports',
+                  to: '/reports',
                   color: 'hover:border-purple-300 hover:bg-purple-50/50',
                   iconColor: 'bg-purple-50 text-purple-600',
                   icon: (
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" />
                     </svg>
                   ),
                 },

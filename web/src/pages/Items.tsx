@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../api/client'
 
@@ -35,13 +35,19 @@ type ItemForm = z.infer<typeof itemSchema>
 export default function Items() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [searchParams] = useSearchParams()
   const [search, setSearch] = useState('')
+  const [showLowStock, setShowLowStock] = useState(searchParams.get('lowStock') === 'true')
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Item | null>(null)
 
   const { data: items = [], isLoading } = useQuery<Item[]>({
-    queryKey: ['items'],
-    queryFn: () => api.get('/items').then(r => r.data),
+    queryKey: ['items', showLowStock],
+    queryFn: () => {
+      const params: Record<string, string> = {}
+      if (showLowStock) params.lowStock = 'true'
+      return api.get('/items', { params }).then(r => r.data)
+    },
   })
 
   const {
@@ -139,8 +145,8 @@ export default function Items() {
 
       {/* Search & Table */}
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-gray-100">
-          <div className="relative max-w-xs">
+        <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <div className="relative max-w-xs flex-1">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
             </svg>
@@ -152,6 +158,16 @@ export default function Items() {
               placeholder="Search by name or SKU…"
             />
           </div>
+          <button
+            type="button"
+            onClick={() => setShowLowStock(v => !v)}
+            className={`btn-sm flex items-center gap-1.5 ${showLowStock ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            {showLowStock ? 'Showing Low Stock' : 'Low Stock Only'}
+          </button>
         </div>
 
         <div className="overflow-x-auto">
