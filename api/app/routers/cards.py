@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_action
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import CardColor, DeckEntry, Role, Shoe, ShoeStatus, Studio, User
+from app.models import CardColor, Container, DeckEntry, Role, Shoe, ShoeStatus, Studio, User
 from app.schemas import (
     AddDecksRequest,
     CardInventorySummary,
@@ -325,13 +325,31 @@ def create_shoe(
     )
     db.add(shoe)
     db.flush()
+
+    # FIFO container consumption (import deferred to avoid circular import)
+    from app.routers.containers import consume_decks_fifo  # noqa: PLC0415
+    container = consume_decks_fifo(
+        db, body.color, DECKS_PER_SHOE,
+        user_id=current_user.id,
+        shoe_id=shoe.id,
+        request=request,
+    )
+    if container is not None:
+        shoe.containerId = container.id
+
     log_action(
         db,
         "CREATE_SHOE",
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe.id,
-        detail={"color": body.color.value, "decksConsumed": DECKS_PER_SHOE, "shoeNumber": shoe.shoeNumber},
+        detail={
+            "color": body.color.value,
+            "decksConsumed": DECKS_PER_SHOE,
+            "shoeNumber": shoe.shoeNumber,
+            "containerId": container.id if container else None,
+            "containerCode": container.code if container else None,
+        },
         request=request,
     )
     db.commit()
@@ -595,6 +613,18 @@ def replace_shoe(
 
     db.add(new_shoe)
     db.flush()
+
+    # FIFO container consumption
+    from app.routers.containers import consume_decks_fifo  # noqa: PLC0415
+    container = consume_decks_fifo(
+        db, original.color, DECKS_PER_SHOE,
+        user_id=current_user.id,
+        shoe_id=new_shoe.id,
+        request=request,
+    )
+    if container is not None:
+        new_shoe.containerId = container.id
+
     log_action(
         db,
         "REPLACE_SHOE",
@@ -607,6 +637,7 @@ def replace_shoe(
             "color": new_shoe.color.value,
             "decksConsumed": DECKS_PER_SHOE,
             "sentToStudio": body.studioId,
+            "containerId": container.id if container else None,
         },
         request=request,
     )

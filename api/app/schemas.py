@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import CardColor, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
+from app.models import CardColor, CardMaterial, ContainerEventType, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
 
 
 # ── Shared config ──────────────────────────────────────────────────────────────
@@ -424,6 +424,7 @@ class StudioOut(OrmBase):
 
 class AddDecksRequest(BaseModel):
     color: CardColor
+    material: Optional[CardMaterial] = None
     deckCount: int = Field(gt=0)
     note: Optional[str] = None
 
@@ -431,6 +432,7 @@ class AddDecksRequest(BaseModel):
 class DeckEntryOut(OrmBase):
     id: int
     color: CardColor
+    material: Optional[CardMaterial] = None
     deckCount: int
     cardCount: int
     note: Optional[str] = None
@@ -453,6 +455,7 @@ class ShoeOut(OrmBase):
     color: CardColor
     status: ShoeStatus
     studioId: Optional[int] = None
+    containerId: Optional[int] = None
     createdById: Optional[int] = None
     sentById: Optional[int] = None
     returnedById: Optional[int] = None
@@ -608,3 +611,44 @@ class CardReportSummary(BaseModel):
     totalShoes: int
     dailyConsumption: List[DeckConsumptionDay]
 
+
+
+# ── Containers ────────────────────────────────────────────────────────────────
+
+class ContainerCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    color: CardColor
+    material: CardMaterial
+
+
+class ContainerUserOut(OrmBase):
+    id: int
+    username: str
+
+
+class ContainerEventOut(OrmBase):
+    id: int
+    containerId: int
+    eventType: ContainerEventType
+    decksConsumed: Optional[int] = None
+    shoeId: Optional[int] = None
+    userId: Optional[int] = None
+    note: Optional[str] = None
+    createdAt: datetime
+    user: Optional[ContainerUserOut] = None
+
+
+class ContainerOut(OrmBase):
+    id: int
+    code: str
+    color: CardColor
+    material: CardMaterial
+    decksRemaining: int
+    isLocked: bool
+    createdById: Optional[int] = None
+    createdAt: datetime
+    lockedAt: Optional[datetime] = None
+    unlockedAt: Optional[datetime] = None
+    archivedAt: Optional[datetime] = None
+    createdBy: Optional[ContainerUserOut] = None
+    events: List[ContainerEventOut] = []

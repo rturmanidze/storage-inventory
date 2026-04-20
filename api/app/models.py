@@ -268,6 +268,19 @@ class CardColor(str, enum.Enum):
     RED = "RED"
 
 
+class CardMaterial(str, enum.Enum):
+    PLASTIC = "PLASTIC"
+    PAPER = "PAPER"
+
+
+class ContainerEventType(str, enum.Enum):
+    CREATED = "CREATED"
+    LOCKED = "LOCKED"
+    UNLOCKED = "UNLOCKED"
+    DECK_CONSUMED = "DECK_CONSUMED"
+    ARCHIVED = "ARCHIVED"
+
+
 class ShoeStatus(str, enum.Enum):
     IN_WAREHOUSE = "IN_WAREHOUSE"
     SENT_TO_STUDIO = "SENT_TO_STUDIO"
@@ -305,6 +318,10 @@ class DeckEntry(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(
+        SAEnum(CardMaterial, name="CardMaterial", create_type=False),
+        nullable=True,
+    )
     deckCount = Column(Integer, nullable=False)
     cardCount = Column(Integer, nullable=False)  # deckCount * 52
     note = Column(Text, nullable=True)
@@ -314,6 +331,64 @@ class DeckEntry(Base):
     createdBy = relationship("User")
 
     __table_args__ = (Index("DeckEntry_color_idx", "color"),)
+
+
+class Container(Base):
+    """A physical deck container holding exactly CONTAINER_CAPACITY decks.
+
+    Containers are the sole storage mechanism for unshod decks.
+    Shoe creation consumes from the oldest non-empty container first (FIFO).
+    """
+
+    __tablename__ = "Container"
+
+    CAPACITY = 200
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String, unique=True, nullable=False)  # e.g. CONTAINER-R01
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(
+        SAEnum(CardMaterial, name="CardMaterial", create_type=False),
+        nullable=False,
+    )
+    decksRemaining = Column(Integer, nullable=False, default=CAPACITY)
+    isLocked = Column(Boolean, nullable=False, default=False)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    lockedAt = Column(DateTime, nullable=True)
+    unlockedAt = Column(DateTime, nullable=True)
+    archivedAt = Column(DateTime, nullable=True)  # set when fully depleted
+
+    createdBy = relationship("User", foreign_keys=[createdById])
+    events = relationship("ContainerEvent", back_populates="container", order_by="ContainerEvent.createdAt")
+    shoes = relationship("Shoe", back_populates="container")
+
+    __table_args__ = (
+        Index("Container_color_idx", "color"),
+        Index("Container_archivedAt_idx", "archivedAt"),
+    )
+
+
+class ContainerEvent(Base):
+    """Audit trail for every significant event on a Container."""
+
+    __tablename__ = "ContainerEvent"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    containerId = Column(Integer, ForeignKey("Container.id", ondelete="CASCADE"), nullable=False)
+    eventType = Column(
+        SAEnum(ContainerEventType, name="ContainerEventType", create_type=False),
+        nullable=False,
+    )
+    decksConsumed = Column(Integer, nullable=True)  # set for DECK_CONSUMED events
+    shoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    note = Column(Text, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    container = relationship("Container", back_populates="events")
+    shoe = relationship("Shoe", foreign_keys=[shoeId])
+    user = relationship("User", foreign_keys=[userId])
 
 
 class Shoe(Base):
@@ -362,6 +437,9 @@ class Shoe(Base):
     refilledAt = Column(DateTime, nullable=True)
     refilledById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
 
+    # Container from which this shoe's decks were sourced (FIFO consumption)
+    containerId = Column(Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True)
+
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
     sentBy = relationship("User", foreign_keys=[sentById])
@@ -371,3 +449,4 @@ class Shoe(Base):
     physicalDamageBy = relationship("User", foreign_keys=[physicalDamageById])
     physicallyDestroyedBy = relationship("User", foreign_keys=[physicallyDestroyedById])
     refilledBy = relationship("User", foreign_keys=[refilledById])
+    container = relationship("Container", back_populates="shoes", foreign_keys=[containerId])

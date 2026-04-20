@@ -9,6 +9,7 @@ from app.routers import (
     auth,
     backup,
     cards,
+    containers,
     dashboard,
     deck_inventory,
     import_data,
@@ -61,6 +62,7 @@ _routers = [
     studios.router,
     cards.router,
     deck_inventory.router,
+    containers.router,
     backup.router,
 ]
 
