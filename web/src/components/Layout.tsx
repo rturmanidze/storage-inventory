@@ -130,9 +130,7 @@ const icons = {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: icons.dashboard, group: 'Overview' },
-  { label: 'Inventory Items', to: '/items', icon: icons.inventory, group: 'Inventory' },
-  { label: 'Warehouses', to: '/warehouses', icon: icons.warehouse, group: 'Inventory' },
-  { label: 'Unit Search', to: '/units', icon: icons.unitSearch, group: 'Inventory' },
+
   { label: 'Studios', to: '/studios', icon: icons.studio, group: 'Card Operations' },
   { label: 'Deck Inventory', to: '/decks', icon: icons.decks, group: 'Card Operations' },
   { label: 'Shoes', to: '/shoes', icon: icons.shoes, group: 'Card Operations' },
