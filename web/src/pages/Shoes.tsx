@@ -16,6 +16,7 @@ type ShoeStatus =
   | 'CARDS_DESTROYED'
   | 'DESTROYED'           // legacy alias for CARDS_DESTROYED
   | 'EMPTY_SHOE_IN_WAREHOUSE'
+  | 'REFILLED'
   | 'PHYSICALLY_DAMAGED'
   | 'PHYSICALLY_DESTROYED'
 
@@ -32,6 +33,7 @@ interface Shoe {
   destroyedAt: string | null
   destroyReason: string | null
   recoveredAt: string | null
+  refilledAt: string | null
   physicalDamageAt: string | null
   physicalDamageReason: string | null
   physicallyDestroyedAt: string | null
@@ -40,6 +42,7 @@ interface Shoe {
   returnedBy: { id: number; username: string } | null
   destroyedBy: { id: number; username: string } | null
   recoveredBy: { id: number; username: string } | null
+  refilledBy: { id: number; username: string } | null
   physicalDamageBy: { id: number; username: string } | null
   physicallyDestroyedBy: { id: number; username: string } | null
 }
@@ -56,6 +59,7 @@ interface CardInventory {
   shoesReturned: number
   shoesCardsDestroyed: number
   shoesEmpty: number
+  shoesRefilled: number
   shoesPhysicallyDamaged: number
   shoesPhysicallyDestroyed: number
   shoesDestroyed: number
@@ -80,6 +84,7 @@ function StatusBadge({ status }: { status: ShoeStatus }) {
     CARDS_DESTROYED: { label: 'Cards Destroyed', cls: 'status-destroyed' },
     DESTROYED: { label: 'Cards Destroyed', cls: 'status-destroyed' },
     EMPTY_SHOE_IN_WAREHOUSE: { label: 'Empty Shoe', cls: 'status-damaged' },
+    REFILLED: { label: 'Refilled', cls: 'status-in-stock' },
     PHYSICALLY_DAMAGED: { label: 'Physically Damaged', cls: 'status-damaged' },
     PHYSICALLY_DESTROYED: { label: 'Physically Destroyed', cls: 'status-destroyed' },
   }
@@ -98,6 +103,9 @@ export default function Shoes() {
   const [destroyCardsModalShoe, setDestroyCardsModalShoe] = useState<Shoe | null>(null)
   const [destroyCardsReason, setDestroyCardsReason] = useState('')
   const [recoverModalShoe, setRecoverModalShoe] = useState<Shoe | null>(null)
+  const [refillModalShoe, setRefillModalShoe] = useState<Shoe | null>(null)
+  const [refillColor, setRefillColor] = useState<'BLACK' | 'RED'>('BLACK')
+  const [refillStudioId, setRefillStudioId] = useState<number | ''>('')
   const [physicalDamageModalShoe, setPhysicalDamageModalShoe] = useState<Shoe | null>(null)
   const [physicalDamageReason, setPhysicalDamageReason] = useState('')
   const [confirmDestroyModalShoe, setConfirmDestroyModalShoe] = useState<Shoe | null>(null)
@@ -168,6 +176,18 @@ export default function Shoes() {
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to recover shoe'),
   })
 
+  const refillMutation = useMutation({
+    mutationFn: ({ shoeId, color, studioId }: { shoeId: number; color: string; studioId?: number }) =>
+      api.post(`/cards/shoes/${shoeId}/refill`, { color, studioId: studioId ?? null }),
+    onSuccess: (_data, vars) => {
+      invalidate()
+      toast.success(vars.studioId ? 'Shoe refilled and sent to studio' : 'Shoe refilled — ready for studio deployment')
+      setRefillModalShoe(null)
+      setRefillStudioId('')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to refill shoe'),
+  })
+
   const physicalDamageMutation = useMutation({
     mutationFn: ({ shoeId, reason }: { shoeId: number; reason: string }) =>
       api.post(`/cards/shoes/${shoeId}/report-physical-damage`, { reason }),
@@ -201,6 +221,7 @@ export default function Shoes() {
     { value: 'RETURNED', label: 'Returned' },
     { value: 'CARDS_DESTROYED', label: 'Cards Destroyed' },
     { value: 'EMPTY_SHOE_IN_WAREHOUSE', label: 'Empty Shoe' },
+    { value: 'REFILLED', label: 'Refilled' },
     { value: 'PHYSICALLY_DAMAGED', label: 'Physically Damaged' },
     { value: 'PHYSICALLY_DESTROYED', label: 'Physically Destroyed' },
   ]
@@ -221,7 +242,7 @@ export default function Shoes() {
 
       {/* Inventory Summary */}
       {inventory && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-3">
           <div className="card p-4 text-center">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Black Decks</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.blackDecks}</p>
@@ -251,6 +272,11 @@ export default function Shoes() {
             <p className="text-xs text-orange-500 uppercase tracking-wide font-semibold">Empty Shoes</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesEmpty}</p>
             <p className="text-xs text-gray-400 mt-0.5">containers</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-green-600 uppercase tracking-wide font-semibold">Refilled</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesRefilled}</p>
+            <p className="text-xs text-gray-400 mt-0.5">ready</p>
           </div>
           <div className="card p-4 text-center">
             <p className="text-xs text-amber-500 uppercase tracking-wide font-semibold">Phys. Damaged</p>
@@ -321,6 +347,7 @@ export default function Shoes() {
                 const lastEventLabel =
                   shoe.status === 'PHYSICALLY_DESTROYED' ? `Phys. Destroyed ${shoe.physicallyDestroyedAt ? new Date(shoe.physicallyDestroyedAt).toLocaleString() : ''}` :
                   shoe.status === 'PHYSICALLY_DAMAGED' ? `Damage Reported ${shoe.physicalDamageAt ? new Date(shoe.physicalDamageAt).toLocaleString() : ''}` :
+                  shoe.status === 'REFILLED' ? `Refilled ${shoe.refilledAt ? new Date(shoe.refilledAt).toLocaleString() : ''}` :
                   shoe.status === 'EMPTY_SHOE_IN_WAREHOUSE' ? `Recovered ${shoe.recoveredAt ? new Date(shoe.recoveredAt).toLocaleString() : ''}` :
                   (shoe.status === 'CARDS_DESTROYED' || shoe.status === 'DESTROYED') ? `Cards Destroyed ${shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : ''}` :
                   shoe.status === 'RETURNED' ? `Returned ${shoe.returnedAt ? new Date(shoe.returnedAt).toLocaleString() : ''}` :
@@ -393,14 +420,39 @@ export default function Shoes() {
                               Recover Shoe
                             </button>
                           )}
-                          {/* EMPTY_SHOE_IN_WAREHOUSE: report physical damage */}
+                          {/* EMPTY_SHOE_IN_WAREHOUSE: refill + report physical damage */}
                           {shoe.status === 'EMPTY_SHOE_IN_WAREHOUSE' && (
-                            <button
-                              className="btn-danger btn-sm"
-                              onClick={() => { setPhysicalDamageModalShoe(shoe); setPhysicalDamageReason('') }}
-                            >
-                              Report Damage
-                            </button>
+                            <>
+                              <button
+                                className="btn-primary btn-sm"
+                                onClick={() => { setRefillModalShoe(shoe); setRefillColor(shoe.color); setRefillStudioId('') }}
+                              >
+                                Refill Shoe
+                              </button>
+                              <button
+                                className="btn-danger btn-sm"
+                                onClick={() => { setPhysicalDamageModalShoe(shoe); setPhysicalDamageReason('') }}
+                              >
+                                Report Damage
+                              </button>
+                            </>
+                          )}
+                          {/* REFILLED: send to studio + destroy cards */}
+                          {shoe.status === 'REFILLED' && (
+                            <>
+                              <button
+                                className="btn-primary btn-sm"
+                                onClick={() => { setSendModalShoe(shoe); setSelectedStudioId('') }}
+                              >
+                                Send
+                              </button>
+                              <button
+                                className="btn-danger btn-sm"
+                                onClick={() => { setDestroyCardsModalShoe(shoe); setDestroyCardsReason('') }}
+                              >
+                                Destroy Cards
+                              </button>
+                            </>
                           )}
                           {/* RETURNED: also allow reporting physical damage */}
                           {shoe.status === 'RETURNED' && (
@@ -635,6 +687,93 @@ export default function Shoes() {
                   onClick={() => recoverMutation.mutate(recoverModalShoe.id)}
                 >
                   {recoverMutation.isPending ? 'Recovering…' : 'Recover Shoe (Empty)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refill Shoe Modal */}
+      {refillModalShoe && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setRefillModalShoe(null); setRefillStudioId('') } }}>
+          <div className="modal-content w-full max-w-md">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Refill Empty Shoe</h2>
+              <button className="btn-ghost btn-sm" onClick={() => { setRefillModalShoe(null); setRefillStudioId('') }}>✕</button>
+            </div>
+            <div className="space-y-5">
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                Shoe <strong>#{refillModalShoe.shoeNumber}</strong> — empty container ready for new cards
+              </div>
+              <div className="bg-indigo-50 rounded-lg p-4 text-sm text-indigo-700">
+                <p className="font-medium mb-2">Refill Requirements</p>
+                <ul className="space-y-1 text-xs">
+                  <li>• Exactly 8 decks (416 cards) will be loaded</li>
+                  <li>• Black available: <strong>{availableBlack} decks</strong></li>
+                  <li>• Red available: <strong>{availableRed} decks</strong></li>
+                </ul>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Card Color</label>
+                <div className="flex gap-3">
+                  {(['BLACK', 'RED'] as const).map(c => {
+                    const available = c === 'BLACK' ? availableBlack : availableRed
+                    const canRefill = available >= 8
+                    return (
+                      <button
+                        key={c}
+                        type="button"
+                        disabled={!canRefill}
+                        onClick={() => setRefillColor(c)}
+                        className={`flex-1 px-4 py-4 rounded-xl border-2 text-sm font-medium transition-all ${
+                          refillColor === c
+                            ? c === 'BLACK' ? 'border-gray-800 bg-gray-800 text-white' : 'border-red-500 bg-red-50 text-red-700'
+                            : canRefill ? 'border-gray-200 text-gray-600 hover:border-gray-300 bg-white' : 'border-gray-100 text-gray-300 bg-gray-50 cursor-not-allowed'
+                        }`}
+                      >
+                        <div className="text-2xl mb-1">{c === 'BLACK' ? '⬛' : '🔴'}</div>
+                        <div>{c === 'BLACK' ? 'Black' : 'Red'}</div>
+                        <div className={`text-xs mt-1 ${canRefill ? 'text-gray-400' : 'text-red-400'}`}>
+                          {available} decks available
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Send to Studio (optional)</label>
+                <select
+                  value={refillStudioId}
+                  onChange={e => setRefillStudioId(Number(e.target.value) || '')}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">— Keep in warehouse —</option>
+                  {studios.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-emerald-50 rounded-lg p-3 text-xs text-emerald-700">
+                Refilling with <strong>{refillColor === 'BLACK' ? 'Black' : 'Red'}</strong> cards will consume{' '}
+                <strong>8 decks</strong> ({(8 * 52).toLocaleString()} cards) from inventory.
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button className="btn-ghost flex-1" onClick={() => { setRefillModalShoe(null); setRefillStudioId('') }}>Cancel</button>
+                <button
+                  className="btn-primary flex-1"
+                  disabled={
+                    refillMutation.isPending ||
+                    (refillColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)
+                  }
+                  onClick={() => refillMutation.mutate({
+                    shoeId: refillModalShoe.id,
+                    color: refillColor,
+                    studioId: refillStudioId ? Number(refillStudioId) : undefined,
+                  })}
+                >
+                  {refillMutation.isPending ? 'Refilling…' : refillStudioId ? 'Refill & Send to Studio' : 'Refill Shoe'}
                 </button>
               </div>
             </div>

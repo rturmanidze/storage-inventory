@@ -200,7 +200,7 @@ def _get_available_decks_report(db: Session, color: CardColor) -> int:
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.color == color,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO]),
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
         )
         .scalar()
         or 0
@@ -244,6 +244,9 @@ def get_card_report_summary(
     )
     shoes_empty = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE).scalar() or 0
+    )
+    shoes_refilled = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.REFILLED).scalar() or 0
     )
     shoes_physically_damaged = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DAMAGED).scalar() or 0
@@ -314,6 +317,7 @@ def get_card_report_summary(
         shoesReturned=shoes_returned,
         shoesCardsDestroyed=shoes_cards_destroyed,
         shoesEmpty=shoes_empty,
+        shoesRefilled=shoes_refilled,
         shoesPhysicallyDamaged=shoes_physically_damaged,
         shoesPhysicallyDestroyed=shoes_physically_destroyed,
         shoesDestroyed=shoes_cards_destroyed + shoes_physically_destroyed,

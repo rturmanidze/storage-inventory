@@ -280,6 +280,8 @@ class ShoeStatus(str, enum.Enum):
     PHYSICALLY_DAMAGED = "PHYSICALLY_DAMAGED"
     # Physical shoe container confirmed destroyed — shoe is fully removed from service
     PHYSICALLY_DESTROYED = "PHYSICALLY_DESTROYED"
+    # Empty shoe container refilled with new decks — ready for studio deployment
+    REFILLED = "REFILLED"
     # Legacy value kept for DB enum-type compat; treated as CARDS_DESTROYED in all logic
     DESTROYED = "DESTROYED"
 
@@ -356,6 +358,10 @@ class Shoe(Base):
     physicallyDestroyedAt = Column(DateTime, nullable=True)
     physicallyDestroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
 
+    # Shoe refill (EMPTY_SHOE_IN_WAREHOUSE → REFILLED)
+    refilledAt = Column(DateTime, nullable=True)
+    refilledById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
     sentBy = relationship("User", foreign_keys=[sentById])
@@ -364,3 +370,4 @@ class Shoe(Base):
     recoveredBy = relationship("User", foreign_keys=[recoveredById])
     physicalDamageBy = relationship("User", foreign_keys=[physicalDamageById])
     physicallyDestroyedBy = relationship("User", foreign_keys=[physicallyDestroyedById])
+    refilledBy = relationship("User", foreign_keys=[refilledById])

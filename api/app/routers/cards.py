@@ -19,6 +19,7 @@ from app.schemas import (
     DeckLowStockResponse,
     DestroyShoeRequest,
     RecoverShoeRequest,
+    RefillShoeRequest,
     ReplaceShoeRequest,
     ReportPhysicalDamageRequest,
     ReturnShoeRequest,
@@ -74,12 +75,12 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
         .scalar()
         or 0
     )
-    # Shoes currently holding their 8 decks
+    # Shoes currently holding their 8 decks (including refilled shoes with new cards)
     holding_shoes = (
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.color == color,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO]),
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
         )
         .scalar()
         or 0
@@ -118,6 +119,9 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
     shoes_empty = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE).scalar() or 0
     )
+    shoes_refilled = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.REFILLED).scalar() or 0
+    )
     shoes_physically_damaged = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DAMAGED).scalar() or 0
     )
@@ -137,6 +141,7 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         shoesReturned=shoes_returned,
         shoesCardsDestroyed=shoes_cards_destroyed,
         shoesEmpty=shoes_empty,
+        shoesRefilled=shoes_refilled,
         shoesPhysicallyDamaged=shoes_physically_damaged,
         shoesPhysicallyDestroyed=shoes_physically_destroyed,
         shoesDestroyed=shoes_cards_destroyed + shoes_physically_destroyed,
@@ -388,7 +393,7 @@ def send_shoe_to_studio(
             status_code=400,
             detail=f"Cannot send a shoe in status '{shoe.status.value}' to a studio",
         )
-    if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED):
+    if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED, ShoeStatus.REFILLED):
         raise HTTPException(status_code=400, detail="Shoe is not in a sendable state")
 
     studio = db.query(Studio).filter(Studio.id == body.studioId).first()
@@ -505,7 +510,7 @@ def destroy_cards(
             status_code=400,
             detail="Cannot destroy cards on a physically damaged or destroyed shoe",
         )
-    if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED):
+    if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED, ShoeStatus.REFILLED):
         raise HTTPException(status_code=400, detail="Shoe is not in a valid state for card destruction")
 
     shoe.status = ShoeStatus.CARDS_DESTROYED
@@ -661,6 +666,104 @@ def recover_shoe(
         },
         request=request,
     )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
+
+
+@router.post("/shoes/{shoe_id}/refill", response_model=ShoeOut)
+def refill_shoe(
+    shoe_id: int,
+    body: RefillShoeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Refill an empty shoe container with new decks.
+
+    Transitions EMPTY_SHOE_IN_WAREHOUSE → REFILLED.
+
+    Rules:
+    - Only allowed for shoes in EMPTY_SHOE_IN_WAREHOUSE status.
+    - Always loads exactly DECKS_PER_SHOE (8) decks.
+    - Card color can be specified and may differ from the original shoe color.
+    - Requires at least DECKS_PER_SHOE available decks in inventory of the chosen color.
+    - Optionally sends the shoe directly to a studio via ``studioId``.
+
+    Deck accounting:
+    - REFILLED shoes are counted in holding_shoes (new cards present) AND in
+      cards_destroyed_shoes (original cards were permanently destroyed).
+    - Net effect: reduces available deck count by DECKS_PER_SHOE ✓
+    """
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status != ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only empty shoes (EMPTY_SHOE_IN_WAREHOUSE) can be refilled. "
+                "Current status: " + shoe.status.value + ". "
+                "Recover the shoe container first if cards were just destroyed."
+            ),
+        )
+
+    available = _get_available_decks(db, body.color)
+    if available < DECKS_PER_SHOE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Not enough {body.color.value} decks to refill. "
+                f"Available: {available}, required: {DECKS_PER_SHOE}"
+            ),
+        )
+
+    shoe.color = body.color
+    shoe.status = ShoeStatus.REFILLED
+    shoe.refilledById = current_user.id
+    shoe.refilledAt = datetime.utcnow()
+    # Clear studio assignment from prior cycle
+    shoe.studioId = None
+
+    log_action(
+        db,
+        "REFILL_SHOE",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={
+            "shoeNumber": shoe.shoeNumber,
+            "color": body.color.value,
+            "decksConsumed": DECKS_PER_SHOE,
+            "cardsLoaded": DECKS_PER_SHOE * CARDS_PER_DECK,
+        },
+        request=request,
+    )
+
+    # Optionally send directly to a studio
+    if body.studioId is not None:
+        studio = db.query(Studio).filter(Studio.id == body.studioId).first()
+        if not studio:
+            raise HTTPException(status_code=404, detail="Studio not found")
+        shoe.status = ShoeStatus.SENT_TO_STUDIO
+        shoe.studioId = body.studioId
+        shoe.sentById = current_user.id
+        shoe.sentAt = datetime.utcnow()
+        log_action(
+            db,
+            "SEND_SHOE_TO_STUDIO",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=shoe_id,
+            detail={
+                "studioId": body.studioId,
+                "studioName": studio.name,
+                "color": shoe.color.value,
+                "sentAfterRefill": True,
+            },
+            request=request,
+        )
+
     db.commit()
     db.refresh(shoe)
     return shoe

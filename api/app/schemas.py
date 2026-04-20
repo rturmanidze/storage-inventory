@@ -469,6 +469,8 @@ class ShoeOut(OrmBase):
     physicalDamageReason: Optional[str] = None
     physicalDamageAt: Optional[datetime] = None
     physicallyDestroyedAt: Optional[datetime] = None
+    refilledAt: Optional[datetime] = None
+    refilledById: Optional[int] = None
     studio: Optional[StudioOut] = None
     createdBy: Optional[MovementCreatedByOut] = None
     sentBy: Optional[MovementCreatedByOut] = None
@@ -477,6 +479,7 @@ class ShoeOut(OrmBase):
     recoveredBy: Optional[MovementCreatedByOut] = None
     physicalDamageBy: Optional[MovementCreatedByOut] = None
     physicallyDestroyedBy: Optional[MovementCreatedByOut] = None
+    refilledBy: Optional[MovementCreatedByOut] = None
 
 
 class CardInventorySummary(BaseModel):
@@ -491,6 +494,7 @@ class CardInventorySummary(BaseModel):
     shoesReturned: int
     shoesCardsDestroyed: int
     shoesEmpty: int
+    shoesRefilled: int
     shoesPhysicallyDamaged: int
     shoesPhysicallyDestroyed: int
     # Legacy alias for backward compat — equals shoesCardsDestroyed + shoesPhysicallyDestroyed
@@ -534,6 +538,12 @@ class ReportPhysicalDamageRequest(BaseModel):
 
 class ConfirmPhysicalDestroyRequest(BaseModel):
     pass  # Confirmation is implicit; user identity derived from JWT
+
+
+class RefillShoeRequest(BaseModel):
+    """Refill an empty shoe container with new cards (always 8 decks)."""
+    color: CardColor
+    studioId: Optional[int] = None  # If set, immediately sends the refilled shoe to this studio
 
 
 class ReplaceShoeRequest(BaseModel):
@@ -591,6 +601,7 @@ class CardReportSummary(BaseModel):
     shoesReturned: int
     shoesCardsDestroyed: int
     shoesEmpty: int
+    shoesRefilled: int
     shoesPhysicallyDamaged: int
     shoesPhysicallyDestroyed: int
     shoesDestroyed: int  # legacy alias
