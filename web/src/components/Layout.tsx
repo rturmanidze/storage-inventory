@@ -193,8 +193,8 @@ export default function Layout() {
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <span className="text-sm font-bold tracking-tight text-white block truncate">Storage WMS</span>
-              <span className="text-2xs text-gray-400 leading-none">Warehouse Management</span>
+              <span className="text-sm font-bold tracking-tight text-white block truncate">Playmatrix</span>
+              <span className="text-2xs text-gray-400 leading-none">Storage Management</span>
             </div>
           )}
         </div>
