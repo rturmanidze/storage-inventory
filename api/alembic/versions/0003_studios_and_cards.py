@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0003_studios_and_cards"
 down_revision: Union[str, None] = "0002_enhancements"
@@ -48,7 +49,7 @@ def upgrade() -> None:
     op.create_table(
         "DeckEntry",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("color", sa.Enum("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
+        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
         sa.Column("deckCount", sa.Integer, nullable=False),
         sa.Column("cardCount", sa.Integer, nullable=False),
         sa.Column("note", sa.Text, nullable=True),
@@ -61,10 +62,10 @@ def upgrade() -> None:
     op.create_table(
         "Shoe",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("color", sa.Enum("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
+        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("IN_WAREHOUSE", "SENT_TO_STUDIO", name="ShoeStatus", create_type=False),
+            postgresql.ENUM("IN_WAREHOUSE", "SENT_TO_STUDIO", name="ShoeStatus", create_type=False),
             nullable=False,
             server_default="IN_WAREHOUSE",
         ),
