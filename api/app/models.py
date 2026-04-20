@@ -272,6 +272,15 @@ class ShoeStatus(str, enum.Enum):
     IN_WAREHOUSE = "IN_WAREHOUSE"
     SENT_TO_STUDIO = "SENT_TO_STUDIO"
     RETURNED = "RETURNED"
+    # Cards destroyed, physical shoe container remains in warehouse
+    CARDS_DESTROYED = "CARDS_DESTROYED"
+    # Shoe container recovered after card destruction — no cards, no deck increase
+    EMPTY_SHOE_IN_WAREHOUSE = "EMPTY_SHOE_IN_WAREHOUSE"
+    # Shoe reported as physically damaged — awaiting confirmation before final destroy
+    PHYSICALLY_DAMAGED = "PHYSICALLY_DAMAGED"
+    # Physical shoe container confirmed destroyed — shoe is fully removed from service
+    PHYSICALLY_DESTROYED = "PHYSICALLY_DESTROYED"
+    # Legacy value kept for DB enum-type compat; treated as CARDS_DESTROYED in all logic
     DESTROYED = "DESTROYED"
 
 
@@ -334,8 +343,24 @@ class Shoe(Base):
     destroyedAt = Column(DateTime, nullable=True)
     destroyReason = Column(Text, nullable=True)
 
+    # Shoe recovery from CARDS_DESTROYED → EMPTY_SHOE_IN_WAREHOUSE (one-time only)
+    recoveredAt = Column(DateTime, nullable=True)
+    recoveredById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
+    # Physical damage report (RETURNED / EMPTY_SHOE_IN_WAREHOUSE → PHYSICALLY_DAMAGED)
+    physicalDamageReason = Column(Text, nullable=True)
+    physicalDamageAt = Column(DateTime, nullable=True)
+    physicalDamageById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
+    # Physical destruction confirmation (PHYSICALLY_DAMAGED → PHYSICALLY_DESTROYED)
+    physicallyDestroyedAt = Column(DateTime, nullable=True)
+    physicallyDestroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
     sentBy = relationship("User", foreign_keys=[sentById])
     returnedBy = relationship("User", foreign_keys=[returnedById])
     destroyedBy = relationship("User", foreign_keys=[destroyedById])
+    recoveredBy = relationship("User", foreign_keys=[recoveredById])
+    physicalDamageBy = relationship("User", foreign_keys=[physicalDamageById])
+    physicallyDestroyedBy = relationship("User", foreign_keys=[physicallyDestroyedById])

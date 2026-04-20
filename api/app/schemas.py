@@ -457,16 +457,26 @@ class ShoeOut(OrmBase):
     sentById: Optional[int] = None
     returnedById: Optional[int] = None
     destroyedById: Optional[int] = None
+    recoveredById: Optional[int] = None
+    physicalDamageById: Optional[int] = None
+    physicallyDestroyedById: Optional[int] = None
     createdAt: datetime
     sentAt: Optional[datetime] = None
     returnedAt: Optional[datetime] = None
     destroyedAt: Optional[datetime] = None
     destroyReason: Optional[str] = None
+    recoveredAt: Optional[datetime] = None
+    physicalDamageReason: Optional[str] = None
+    physicalDamageAt: Optional[datetime] = None
+    physicallyDestroyedAt: Optional[datetime] = None
     studio: Optional[StudioOut] = None
     createdBy: Optional[MovementCreatedByOut] = None
     sentBy: Optional[MovementCreatedByOut] = None
     returnedBy: Optional[MovementCreatedByOut] = None
     destroyedBy: Optional[MovementCreatedByOut] = None
+    recoveredBy: Optional[MovementCreatedByOut] = None
+    physicalDamageBy: Optional[MovementCreatedByOut] = None
+    physicallyDestroyedBy: Optional[MovementCreatedByOut] = None
 
 
 class CardInventorySummary(BaseModel):
@@ -479,6 +489,11 @@ class CardInventorySummary(BaseModel):
     shoesInWarehouse: int
     shoesSentToStudio: int
     shoesReturned: int
+    shoesCardsDestroyed: int
+    shoesEmpty: int
+    shoesPhysicallyDamaged: int
+    shoesPhysicallyDestroyed: int
+    # Legacy alias for backward compat — equals shoesCardsDestroyed + shoesPhysicallyDestroyed
     shoesDestroyed: int
     totalShoes: int
 
@@ -503,6 +518,22 @@ class ReturnShoeRequest(BaseModel):
 
 class DestroyShoeRequest(BaseModel):
     reason: str = Field(min_length=1)
+
+
+# Alias kept for clarity — destroying cards (not shoe)
+DestroyCardsRequest = DestroyShoeRequest
+
+
+class RecoverShoeRequest(BaseModel):
+    pass  # No extra fields; shoe is recovered by user action alone
+
+
+class ReportPhysicalDamageRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class ConfirmPhysicalDestroyRequest(BaseModel):
+    pass  # Confirmation is implicit; user identity derived from JWT
 
 
 class ReplaceShoeRequest(BaseModel):
@@ -558,7 +589,11 @@ class CardReportSummary(BaseModel):
     shoesInWarehouse: int
     shoesSentToStudio: int
     shoesReturned: int
-    shoesDestroyed: int
+    shoesCardsDestroyed: int
+    shoesEmpty: int
+    shoesPhysicallyDamaged: int
+    shoesPhysicallyDestroyed: int
+    shoesDestroyed: int  # legacy alias
     totalShoes: int
     dailyConsumption: List[DeckConsumptionDay]
 

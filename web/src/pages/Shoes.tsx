@@ -9,11 +9,21 @@ interface Studio {
   name: string
 }
 
+type ShoeStatus =
+  | 'IN_WAREHOUSE'
+  | 'SENT_TO_STUDIO'
+  | 'RETURNED'
+  | 'CARDS_DESTROYED'
+  | 'DESTROYED'           // legacy alias for CARDS_DESTROYED
+  | 'EMPTY_SHOE_IN_WAREHOUSE'
+  | 'PHYSICALLY_DAMAGED'
+  | 'PHYSICALLY_DESTROYED'
+
 interface Shoe {
   id: number
   shoeNumber: number
   color: 'BLACK' | 'RED'
-  status: 'IN_WAREHOUSE' | 'SENT_TO_STUDIO' | 'RETURNED' | 'DESTROYED'
+  status: ShoeStatus
   studioId: number | null
   studio: Studio | null
   createdAt: string
@@ -21,10 +31,17 @@ interface Shoe {
   returnedAt: string | null
   destroyedAt: string | null
   destroyReason: string | null
+  recoveredAt: string | null
+  physicalDamageAt: string | null
+  physicalDamageReason: string | null
+  physicallyDestroyedAt: string | null
   createdBy: { id: number; username: string } | null
   sentBy: { id: number; username: string } | null
   returnedBy: { id: number; username: string } | null
   destroyedBy: { id: number; username: string } | null
+  recoveredBy: { id: number; username: string } | null
+  physicalDamageBy: { id: number; username: string } | null
+  physicallyDestroyedBy: { id: number; username: string } | null
 }
 
 interface CardInventory {
@@ -37,6 +54,10 @@ interface CardInventory {
   shoesInWarehouse: number
   shoesSentToStudio: number
   shoesReturned: number
+  shoesCardsDestroyed: number
+  shoesEmpty: number
+  shoesPhysicallyDamaged: number
+  shoesPhysicallyDestroyed: number
   shoesDestroyed: number
   totalShoes: number
 }
@@ -51,16 +72,22 @@ function ColorBadge({ color }: { color: 'BLACK' | 'RED' }) {
   )
 }
 
-function StatusBadge({ status }: { status: Shoe['status'] }) {
-  const map: Record<Shoe['status'], { label: string; cls: string }> = {
+function StatusBadge({ status }: { status: ShoeStatus }) {
+  const map: Partial<Record<ShoeStatus, { label: string; cls: string }>> = {
     IN_WAREHOUSE: { label: 'In Warehouse', cls: 'status-in-stock' },
     SENT_TO_STUDIO: { label: 'Sent to Studio', cls: 'status-issued' },
     RETURNED: { label: 'Returned', cls: 'status-quarantined' },
-    DESTROYED: { label: 'Destroyed', cls: 'status-destroyed' },
+    CARDS_DESTROYED: { label: 'Cards Destroyed', cls: 'status-destroyed' },
+    DESTROYED: { label: 'Cards Destroyed', cls: 'status-destroyed' },
+    EMPTY_SHOE_IN_WAREHOUSE: { label: 'Empty Shoe', cls: 'status-damaged' },
+    PHYSICALLY_DAMAGED: { label: 'Physically Damaged', cls: 'status-damaged' },
+    PHYSICALLY_DESTROYED: { label: 'Physically Destroyed', cls: 'status-destroyed' },
   }
   const { label, cls } = map[status] ?? { label: status, cls: '' }
   return <span className={`badge text-xs ${cls}`}>{label}</span>
 }
+
+type StatusFilter = 'ALL' | ShoeStatus
 
 export default function Shoes() {
   const { user } = useAuth()
@@ -68,11 +95,15 @@ export default function Shoes() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [sendModalShoe, setSendModalShoe] = useState<Shoe | null>(null)
   const [returnModalShoe, setReturnModalShoe] = useState<Shoe | null>(null)
-  const [destroyModalShoe, setDestroyModalShoe] = useState<Shoe | null>(null)
-  const [destroyReason, setDestroyReason] = useState('')
+  const [destroyCardsModalShoe, setDestroyCardsModalShoe] = useState<Shoe | null>(null)
+  const [destroyCardsReason, setDestroyCardsReason] = useState('')
+  const [recoverModalShoe, setRecoverModalShoe] = useState<Shoe | null>(null)
+  const [physicalDamageModalShoe, setPhysicalDamageModalShoe] = useState<Shoe | null>(null)
+  const [physicalDamageReason, setPhysicalDamageReason] = useState('')
+  const [confirmDestroyModalShoe, setConfirmDestroyModalShoe] = useState<Shoe | null>(null)
   const [selectedColor, setSelectedColor] = useState<'BLACK' | 'RED'>('BLACK')
   const [selectedStudioId, setSelectedStudioId] = useState<number | ''>('')
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'IN_WAREHOUSE' | 'SENT_TO_STUDIO' | 'RETURNED' | 'DESTROYED'>('ALL')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
 
   const { data: inventory } = useQuery<CardInventory>({
@@ -101,48 +132,58 @@ export default function Shoes() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (color: 'BLACK' | 'RED') =>
-      api.post('/cards/shoes', { color }),
-    onSuccess: () => {
-      invalidate()
-      toast.success('Shoe created successfully')
-      setCreateModalOpen(false)
-    },
+    mutationFn: (color: 'BLACK' | 'RED') => api.post('/cards/shoes', { color }),
+    onSuccess: () => { invalidate(); toast.success('Shoe created successfully'); setCreateModalOpen(false) },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to create shoe'),
   })
 
   const sendMutation = useMutation({
     mutationFn: ({ shoeId, studioId }: { shoeId: number; studioId: number }) =>
       api.post(`/cards/shoes/${shoeId}/send-to-studio`, { studioId }),
-    onSuccess: () => {
-      invalidate()
-      toast.success('Shoe sent to studio')
-      setSendModalShoe(null)
-    },
+    onSuccess: () => { invalidate(); toast.success('Shoe sent to studio'); setSendModalShoe(null) },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to send shoe'),
   })
 
   const returnMutation = useMutation({
-    mutationFn: (shoeId: number) =>
-      api.post(`/cards/shoes/${shoeId}/return-from-studio`),
-    onSuccess: () => {
-      invalidate()
-      toast.success('Shoe returned — 8 decks restored to inventory')
-      setReturnModalShoe(null)
-    },
+    mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/return-from-studio`),
+    onSuccess: () => { invalidate(); toast.success('Shoe returned — 8 decks restored to inventory'); setReturnModalShoe(null) },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to return shoe'),
   })
 
-  const destroyMutation = useMutation({
+  const destroyCardsMutation = useMutation({
     mutationFn: ({ shoeId, reason }: { shoeId: number; reason: string }) =>
       api.post(`/cards/shoes/${shoeId}/destroy`, { reason }),
     onSuccess: () => {
       invalidate()
-      toast.success('Shoe marked as destroyed')
-      setDestroyModalShoe(null)
-      setDestroyReason('')
+      toast.success('Cards destroyed — shoe container remains in warehouse')
+      setDestroyCardsModalShoe(null)
+      setDestroyCardsReason('')
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to destroy shoe'),
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to destroy cards'),
+  })
+
+  const recoverMutation = useMutation({
+    mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/recover-shoe`),
+    onSuccess: () => { invalidate(); toast.success('Shoe recovered — empty container now in warehouse'); setRecoverModalShoe(null) },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to recover shoe'),
+  })
+
+  const physicalDamageMutation = useMutation({
+    mutationFn: ({ shoeId, reason }: { shoeId: number; reason: string }) =>
+      api.post(`/cards/shoes/${shoeId}/report-physical-damage`, { reason }),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Physical damage reported — awaiting destruction confirmation')
+      setPhysicalDamageModalShoe(null)
+      setPhysicalDamageReason('')
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to report physical damage'),
+  })
+
+  const confirmDestroyMutation = useMutation({
+    mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/confirm-physical-destroy`),
+    onSuccess: () => { invalidate(); toast.success('Shoe physically destroyed and removed from service'); setConfirmDestroyModalShoe(null) },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to confirm physical destruction'),
   })
 
   function handleSend() {
@@ -150,33 +191,26 @@ export default function Shoes() {
     sendMutation.mutate({ shoeId: sendModalShoe.id, studioId: Number(selectedStudioId) })
   }
 
-  function handleReturn() {
-    if (!returnModalShoe) return
-    returnMutation.mutate(returnModalShoe.id)
-  }
-
-  function handleDestroy() {
-    if (!destroyModalShoe || !destroyReason.trim()) return
-    destroyMutation.mutate({ shoeId: destroyModalShoe.id, reason: destroyReason.trim() })
-  }
-
   const availableBlack = inventory?.blackDecks ?? 0
   const availableRed = inventory?.redDecks ?? 0
 
-  const filterOptions: { value: typeof statusFilter; label: string }[] = [
+  const filterOptions: { value: StatusFilter; label: string }[] = [
     { value: 'ALL', label: 'All' },
     { value: 'IN_WAREHOUSE', label: 'In Warehouse' },
     { value: 'SENT_TO_STUDIO', label: 'Sent to Studio' },
     { value: 'RETURNED', label: 'Returned' },
-    { value: 'DESTROYED', label: 'Destroyed' },
+    { value: 'CARDS_DESTROYED', label: 'Cards Destroyed' },
+    { value: 'EMPTY_SHOE_IN_WAREHOUSE', label: 'Empty Shoe' },
+    { value: 'PHYSICALLY_DAMAGED', label: 'Physically Damaged' },
+    { value: 'PHYSICALLY_DESTROYED', label: 'Physically Destroyed' },
   ]
 
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Shoes (שׂוּ)</h1>
-          <p className="page-subtitle">Assemble and manage card shoes — each shoe uses 8 decks (416 cards)</p>
+          <h1 className="page-title">Shoes</h1>
+          <p className="page-subtitle">Manage card shoes — each shoe uses 8 decks (416 cards)</p>
         </div>
         {canEdit && (
           <button className="btn-primary" onClick={() => setCreateModalOpen(true)}>
@@ -187,16 +221,16 @@ export default function Shoes() {
 
       {/* Inventory Summary */}
       {inventory && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           <div className="card p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Available Black</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Black Decks</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.blackDecks}</p>
-            <p className="text-xs text-gray-400 mt-0.5">decks</p>
+            <p className="text-xs text-gray-400 mt-0.5">available</p>
           </div>
           <div className="card p-4 text-center">
-            <p className="text-xs text-red-500 uppercase tracking-wide font-semibold">Available Red</p>
+            <p className="text-xs text-red-500 uppercase tracking-wide font-semibold">Red Decks</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.redDecks}</p>
-            <p className="text-xs text-gray-400 mt-0.5">decks</p>
+            <p className="text-xs text-gray-400 mt-0.5">available</p>
           </div>
           <div className="card p-4 text-center">
             <p className="text-xs text-indigo-500 uppercase tracking-wide font-semibold">In Warehouse</p>
@@ -214,8 +248,18 @@ export default function Shoes() {
             <p className="text-xs text-gray-400 mt-0.5">shoes</p>
           </div>
           <div className="card p-4 text-center">
-            <p className="text-xs text-rose-500 uppercase tracking-wide font-semibold">Destroyed</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesDestroyed}</p>
+            <p className="text-xs text-orange-500 uppercase tracking-wide font-semibold">Empty Shoes</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesEmpty}</p>
+            <p className="text-xs text-gray-400 mt-0.5">containers</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-amber-500 uppercase tracking-wide font-semibold">Phys. Damaged</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesPhysicallyDamaged}</p>
+            <p className="text-xs text-gray-400 mt-0.5">shoes</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-rose-500 uppercase tracking-wide font-semibold">Cards Destroyed</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesCardsDestroyed}</p>
             <p className="text-xs text-gray-400 mt-0.5">shoes</p>
           </div>
         </div>
@@ -275,10 +319,14 @@ export default function Shoes() {
             <tbody className="divide-y divide-gray-50">
               {shoes.map(shoe => {
                 const lastEventLabel =
-                  shoe.status === 'DESTROYED' ? `Destroyed ${shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : ''}` :
+                  shoe.status === 'PHYSICALLY_DESTROYED' ? `Phys. Destroyed ${shoe.physicallyDestroyedAt ? new Date(shoe.physicallyDestroyedAt).toLocaleString() : ''}` :
+                  shoe.status === 'PHYSICALLY_DAMAGED' ? `Damage Reported ${shoe.physicalDamageAt ? new Date(shoe.physicalDamageAt).toLocaleString() : ''}` :
+                  shoe.status === 'EMPTY_SHOE_IN_WAREHOUSE' ? `Recovered ${shoe.recoveredAt ? new Date(shoe.recoveredAt).toLocaleString() : ''}` :
+                  (shoe.status === 'CARDS_DESTROYED' || shoe.status === 'DESTROYED') ? `Cards Destroyed ${shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : ''}` :
                   shoe.status === 'RETURNED' ? `Returned ${shoe.returnedAt ? new Date(shoe.returnedAt).toLocaleString() : ''}` :
                   shoe.status === 'SENT_TO_STUDIO' ? `Sent ${shoe.sentAt ? new Date(shoe.sentAt).toLocaleString() : ''}` :
                   `Created ${new Date(shoe.createdAt).toLocaleString()}`
+                const isCardsDestroyed = shoe.status === 'CARDS_DESTROYED' || shoe.status === 'DESTROYED'
                 return (
                   <tr key={shoe.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-mono font-semibold text-gray-700">
@@ -289,9 +337,14 @@ export default function Shoes() {
                     <td className="px-4 py-3">
                       <div>
                         <StatusBadge status={shoe.status} />
-                        {shoe.status === 'DESTROYED' && shoe.destroyReason && (
+                        {isCardsDestroyed && shoe.destroyReason && (
                           <p className="text-2xs text-gray-400 mt-0.5 max-w-[160px] truncate" title={shoe.destroyReason}>
                             {shoe.destroyReason}
+                          </p>
+                        )}
+                        {shoe.status === 'PHYSICALLY_DAMAGED' && shoe.physicalDamageReason && (
+                          <p className="text-2xs text-orange-400 mt-0.5 max-w-[160px] truncate" title={shoe.physicalDamageReason}>
+                            {shoe.physicalDamageReason}
                           </p>
                         )}
                       </div>
@@ -304,15 +357,25 @@ export default function Shoes() {
                     <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">{lastEventLabel}</td>
                     {canEdit && (
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* IN_WAREHOUSE / RETURNED: send to studio + destroy cards */}
                           {(shoe.status === 'IN_WAREHOUSE' || shoe.status === 'RETURNED') && (
-                            <button
-                              className="btn-primary btn-sm"
-                              onClick={() => { setSendModalShoe(shoe); setSelectedStudioId('') }}
-                            >
-                              Send
-                            </button>
+                            <>
+                              <button
+                                className="btn-primary btn-sm"
+                                onClick={() => { setSendModalShoe(shoe); setSelectedStudioId('') }}
+                              >
+                                Send
+                              </button>
+                              <button
+                                className="btn-danger btn-sm"
+                                onClick={() => { setDestroyCardsModalShoe(shoe); setDestroyCardsReason('') }}
+                              >
+                                Destroy Cards
+                              </button>
+                            </>
                           )}
+                          {/* SENT_TO_STUDIO: return to warehouse */}
                           {shoe.status === 'SENT_TO_STUDIO' && (
                             <button
                               className="btn-secondary btn-sm"
@@ -321,12 +384,40 @@ export default function Shoes() {
                               Return
                             </button>
                           )}
-                          {(shoe.status === 'IN_WAREHOUSE' || shoe.status === 'RETURNED') && (
+                          {/* CARDS_DESTROYED: recover empty shoe (one-time) */}
+                          {isCardsDestroyed && (
+                            <button
+                              className="btn-secondary btn-sm"
+                              onClick={() => setRecoverModalShoe(shoe)}
+                            >
+                              Recover Shoe
+                            </button>
+                          )}
+                          {/* EMPTY_SHOE_IN_WAREHOUSE: report physical damage */}
+                          {shoe.status === 'EMPTY_SHOE_IN_WAREHOUSE' && (
                             <button
                               className="btn-danger btn-sm"
-                              onClick={() => { setDestroyModalShoe(shoe); setDestroyReason('') }}
+                              onClick={() => { setPhysicalDamageModalShoe(shoe); setPhysicalDamageReason('') }}
                             >
-                              Destroy
+                              Report Damage
+                            </button>
+                          )}
+                          {/* RETURNED: also allow reporting physical damage */}
+                          {shoe.status === 'RETURNED' && (
+                            <button
+                              className="btn-ghost btn-sm text-orange-600 border-orange-200 hover:bg-orange-50"
+                              onClick={() => { setPhysicalDamageModalShoe(shoe); setPhysicalDamageReason('') }}
+                            >
+                              Report Damage
+                            </button>
+                          )}
+                          {/* PHYSICALLY_DAMAGED: confirm physical destruction */}
+                          {shoe.status === 'PHYSICALLY_DAMAGED' && (
+                            <button
+                              className="btn-danger btn-sm"
+                              onClick={() => setConfirmDestroyModalShoe(shoe)}
+                            >
+                              Confirm Destroy
                             </button>
                           )}
                         </div>
@@ -414,7 +505,7 @@ export default function Shoes() {
             </div>
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
-                Shoe <strong>#{sendModalShoe.id}</strong> — <ColorBadge color={sendModalShoe.color} />
+                Shoe <strong>#{sendModalShoe.shoeNumber}</strong> — <ColorBadge color={sendModalShoe.color} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Studio</label>
@@ -454,7 +545,7 @@ export default function Shoes() {
             </div>
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
-                <p>Shoe <strong>#{returnModalShoe.id}</strong> — <ColorBadge color={returnModalShoe.color} /></p>
+                <p>Shoe <strong>#{returnModalShoe.shoeNumber}</strong> — <ColorBadge color={returnModalShoe.color} /></p>
                 {returnModalShoe.studio && (
                   <p className="mt-1 text-xs text-gray-500">Returning from: <strong>{returnModalShoe.studio.name}</strong></p>
                 )}
@@ -467,9 +558,9 @@ export default function Shoes() {
                 <button
                   className="btn-primary flex-1"
                   disabled={returnMutation.isPending}
-                  onClick={handleReturn}
+                  onClick={() => returnMutation.mutate(returnModalShoe.id)}
                 >
-                  {returnMutation.isPending ? 'Returning…' : 'Return Shoe'}
+                  {returnMutation.isPending ? 'Returning…' : 'Return to Warehouse'}
                 </button>
               </div>
             </div>
@@ -477,39 +568,149 @@ export default function Shoes() {
         </div>
       )}
 
-      {/* Destroy Shoe Modal */}
-      {destroyModalShoe && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setDestroyModalShoe(null); setDestroyReason('') } }}>
+      {/* Destroy Cards Modal */}
+      {destroyCardsModalShoe && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setDestroyCardsModalShoe(null); setDestroyCardsReason('') } }}>
           <div className="modal-content w-full max-w-sm">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-gray-800">Destroy Shoe</h2>
-              <button className="btn-ghost btn-sm" onClick={() => { setDestroyModalShoe(null); setDestroyReason('') }}>✕</button>
+              <h2 className="text-lg font-semibold text-gray-800">Destroy Cards</h2>
+              <button className="btn-ghost btn-sm" onClick={() => { setDestroyCardsModalShoe(null); setDestroyCardsReason('') }}>✕</button>
             </div>
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
-                Shoe <strong>#{destroyModalShoe.id}</strong> — <ColorBadge color={destroyModalShoe.color} />
+                Shoe <strong>#{destroyCardsModalShoe.shoeNumber}</strong> — <ColorBadge color={destroyCardsModalShoe.color} />
               </div>
               <div className="bg-rose-50 rounded-lg p-3 text-xs text-rose-700">
-                ⚠️ This action is <strong>permanent</strong>. The shoe will be marked as destroyed and its decks will be permanently removed from inventory.
+                ⚠️ This permanently destroys the <strong>cards</strong> inside the shoe. The shoe container
+                will remain in the warehouse and can be recovered later.
+                <br /><br />8 decks ({(8 * 52).toLocaleString()} cards) will be permanently removed from inventory.
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Destruction <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Card Destruction <span className="text-red-500">*</span></label>
                 <textarea
-                  value={destroyReason}
-                  onChange={e => setDestroyReason(e.target.value)}
+                  value={destroyCardsReason}
+                  onChange={e => setDestroyCardsReason(e.target.value)}
                   placeholder="e.g. Damaged cards, expired, contaminated…"
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
                 />
               </div>
               <div className="flex gap-3 pt-1">
-                <button className="btn-ghost flex-1" onClick={() => { setDestroyModalShoe(null); setDestroyReason('') }}>Cancel</button>
+                <button className="btn-ghost flex-1" onClick={() => { setDestroyCardsModalShoe(null); setDestroyCardsReason('') }}>Cancel</button>
                 <button
                   className="btn-danger flex-1"
-                  disabled={!destroyReason.trim() || destroyMutation.isPending}
-                  onClick={handleDestroy}
+                  disabled={!destroyCardsReason.trim() || destroyCardsMutation.isPending}
+                  onClick={() => destroyCardsMutation.mutate({ shoeId: destroyCardsModalShoe.id, reason: destroyCardsReason.trim() })}
                 >
-                  {destroyMutation.isPending ? 'Destroying…' : 'Destroy Shoe'}
+                  {destroyCardsMutation.isPending ? 'Destroying…' : 'Destroy Cards'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recover Shoe Modal */}
+      {recoverModalShoe && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setRecoverModalShoe(null) }}>
+          <div className="modal-content w-full max-w-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Recover Empty Shoe</h2>
+              <button className="btn-ghost btn-sm" onClick={() => setRecoverModalShoe(null)}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                Shoe <strong>#{recoverModalShoe.shoeNumber}</strong> — <ColorBadge color={recoverModalShoe.color} />
+              </div>
+              <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700">
+                The physical shoe container will be recovered and marked as <strong>Empty Shoe in Warehouse</strong>.
+                <br /><br />Cards remain destroyed — no deck inventory increase.
+                This action can only be performed <strong>once</strong> per destroyed-cards event.
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button className="btn-ghost flex-1" onClick={() => setRecoverModalShoe(null)}>Cancel</button>
+                <button
+                  className="btn-secondary flex-1"
+                  disabled={recoverMutation.isPending}
+                  onClick={() => recoverMutation.mutate(recoverModalShoe.id)}
+                >
+                  {recoverMutation.isPending ? 'Recovering…' : 'Recover Shoe (Empty)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Physical Damage Modal */}
+      {physicalDamageModalShoe && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setPhysicalDamageModalShoe(null); setPhysicalDamageReason('') } }}>
+          <div className="modal-content w-full max-w-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Report Physical Damage</h2>
+              <button className="btn-ghost btn-sm" onClick={() => { setPhysicalDamageModalShoe(null); setPhysicalDamageReason('') }}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                Shoe <strong>#{physicalDamageModalShoe.shoeNumber}</strong> — <ColorBadge color={physicalDamageModalShoe.color} />
+              </div>
+              <div className="bg-amber-50 rounded-lg p-3 text-xs text-amber-700">
+                ⚠️ Report <strong>physical damage only</strong> — broken, cracked, or structurally unusable shoe container.
+                <br /><br />Do NOT use this for card depletion or routine usage. Use "Destroy Cards" for that.
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Damage Description <span className="text-red-500">*</span></label>
+                <textarea
+                  value={physicalDamageReason}
+                  onChange={e => setPhysicalDamageReason(e.target.value)}
+                  placeholder="e.g. Cracked housing, broken mechanism, structural damage…"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button className="btn-ghost flex-1" onClick={() => { setPhysicalDamageModalShoe(null); setPhysicalDamageReason('') }}>Cancel</button>
+                <button
+                  className="btn-danger flex-1"
+                  disabled={!physicalDamageReason.trim() || physicalDamageMutation.isPending}
+                  onClick={() => physicalDamageMutation.mutate({ shoeId: physicalDamageModalShoe.id, reason: physicalDamageReason.trim() })}
+                >
+                  {physicalDamageMutation.isPending ? 'Reporting…' : 'Report Damage'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Physical Destruction Modal */}
+      {confirmDestroyModalShoe && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setConfirmDestroyModalShoe(null) }}>
+          <div className="modal-content w-full max-w-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Confirm Physical Destruction</h2>
+              <button className="btn-ghost btn-sm" onClick={() => setConfirmDestroyModalShoe(null)}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                Shoe <strong>#{confirmDestroyModalShoe.shoeNumber}</strong> — <ColorBadge color={confirmDestroyModalShoe.color} />
+                {confirmDestroyModalShoe.physicalDamageReason && (
+                  <p className="mt-2 text-xs text-orange-600">Damage reported: {confirmDestroyModalShoe.physicalDamageReason}</p>
+                )}
+              </div>
+              <div className="bg-rose-50 rounded-lg p-3 text-xs text-rose-700">
+                ⚠️ <strong>This action is irreversible</strong> and applies only to physically damaged shoes.
+                <br /><br />The shoe container will be permanently removed from service.
+                A replacement shoe can be created afterwards (consuming 8 new decks).
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button className="btn-ghost flex-1" onClick={() => setConfirmDestroyModalShoe(null)}>Cancel</button>
+                <button
+                  className="btn-danger flex-1"
+                  disabled={confirmDestroyMutation.isPending}
+                  onClick={() => confirmDestroyMutation.mutate(confirmDestroyModalShoe.id)}
+                >
+                  {confirmDestroyMutation.isPending ? 'Destroying…' : 'Confirm Destruction'}
                 </button>
               </div>
             </div>

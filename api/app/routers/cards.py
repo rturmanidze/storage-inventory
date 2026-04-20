@@ -12,12 +12,15 @@ from app.models import CardColor, DeckEntry, Role, Shoe, ShoeStatus, Studio, Use
 from app.schemas import (
     AddDecksRequest,
     CardInventorySummary,
+    ConfirmPhysicalDestroyRequest,
     CreateShoeRequest,
     DeckColorStatus,
     DeckEntryOut,
     DeckLowStockResponse,
     DestroyShoeRequest,
+    RecoverShoeRequest,
     ReplaceShoeRequest,
+    ReportPhysicalDamageRequest,
     ReturnShoeRequest,
     SendShoeRequest,
     ShoeOut,
@@ -45,29 +48,25 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
     """Return current available deck count for a given color.
 
     Available decks = total added via DeckEntry
-                    - (active shoes * DECKS_PER_SHOE)
+                    - decks currently held by active shoes
+                    - decks permanently destroyed (cards destroyed workflow)
 
-    'Active' means the shoe is currently holding decks (IN_WAREHOUSE or
-    SENT_TO_STUDIO).  RETURNED shoes have given their decks back to the
-    pool; DESTROYED shoes are permanently removed from circulation
-    (their decks were already subtracted when the shoe was created, and
-    returning a RETURNED shoe then destroying it re-subtracts those decks).
+    Deck accounting per status:
+    - IN_WAREHOUSE:           shoe holds 8 decks  (pool -8)
+    - SENT_TO_STUDIO:         shoe holds 8 decks  (pool -8)
+    - RETURNED:               decks back in pool  (no impact)
+    - CARDS_DESTROYED:        cards gone permanently (pool -8, tracked via destroyedAt)
+    - EMPTY_SHOE_IN_WAREHOUSE: cards already destroyed (pool -8, destroyedAt set)
+    - PHYSICALLY_DAMAGED:     depends on prior path:
+        from RETURNED           → decks in pool (destroyedAt is NULL)
+        from EMPTY_SHOE         → cards destroyed (destroyedAt is NOT NULL, pool -8)
+    - PHYSICALLY_DESTROYED:   same logic as PHYSICALLY_DAMAGED
+    - DESTROYED (legacy):     treated as CARDS_DESTROYED (destroyedAt IS NOT NULL)
 
-    Formula: available = total_added - (all_non_returned_non_destroyed +
-             destroyed_from_warehouse_or_studio) * 8
-    Simplified: available = total_added - (shoes NOT in RETURNED status) * 8
-    Wait — DESTROYED shoes should also reduce the pool permanently.
-
-    Correct accounting:
-    - IN_WAREHOUSE: shoe holds 8 decks (pool -8)
-    - SENT_TO_STUDIO: shoe holds 8 decks (pool -8)
-    - RETURNED: shoe gave decks back (pool +8 relative to creation)
-    - DESTROYED: pool depends on prior state:
-        - was IN_WAREHOUSE/SENT_TO_STUDIO → decks gone (pool -8, same as creation, no change)
-        - was RETURNED → decks were back in pool, now destroyed (pool -8)
-
-    Net formula: available = total_added - (IN_WAREHOUSE + SENT_TO_STUDIO + DESTROYED) * 8
-    RETURNED shoes do NOT consume from the deck pool.
+    Formula:
+        available = total_added
+                  - (IN_WAREHOUSE + SENT_TO_STUDIO shoes) * 8
+                  - (shoes where destroyedAt IS NOT NULL) * 8
     """
     total_added = (
         db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
@@ -75,35 +74,57 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
         .scalar()
         or 0
     )
-    # Shoes that consume deck pool: everything except RETURNED
-    consuming_shoes = (
+    # Shoes currently holding their 8 decks
+    holding_shoes = (
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.color == color,
-            Shoe.status != ShoeStatus.RETURNED,
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO]),
         )
         .scalar()
         or 0
     )
-    return int(total_added) - (int(consuming_shoes) * DECKS_PER_SHOE)
+    # Shoes whose cards were permanently destroyed (set when destroy-cards action runs)
+    cards_destroyed_shoes = (
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.destroyedAt.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+    return int(total_added) - (int(holding_shoes) + int(cards_destroyed_shoes)) * DECKS_PER_SHOE
 
 
 def _build_inventory_summary(db: Session) -> CardInventorySummary:
     black_decks = _get_available_decks(db, CardColor.BLACK)
     red_decks = _get_available_decks(db, CardColor.RED)
-    shoes_in_warehouse = (
+    shoes_in_warehouse = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.IN_WAREHOUSE).scalar() or 0
     )
-    shoes_sent = (
+    shoes_sent = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.SENT_TO_STUDIO).scalar() or 0
     )
-    shoes_returned = (
+    shoes_returned = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.RETURNED).scalar() or 0
     )
-    shoes_destroyed = (
-        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.DESTROYED).scalar() or 0
+    shoes_cards_destroyed = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.status.in_([ShoeStatus.CARDS_DESTROYED, ShoeStatus.DESTROYED]))
+        .scalar()
+        or 0
     )
-    total_shoes = int(shoes_in_warehouse) + int(shoes_sent) + int(shoes_returned) + int(shoes_destroyed)
+    shoes_empty = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE).scalar() or 0
+    )
+    shoes_physically_damaged = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DAMAGED).scalar() or 0
+    )
+    shoes_physically_destroyed = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED).scalar() or 0
+    )
+    total_shoes = int(db.query(func.count(Shoe.id)).scalar() or 0)
     return CardInventorySummary(
         blackDecks=black_decks,
         redDecks=red_decks,
@@ -111,10 +132,14 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         redCards=red_decks * CARDS_PER_DECK,
         totalDecks=black_decks + red_decks,
         totalCards=(black_decks + red_decks) * CARDS_PER_DECK,
-        shoesInWarehouse=int(shoes_in_warehouse),
-        shoesSentToStudio=int(shoes_sent),
-        shoesReturned=int(shoes_returned),
-        shoesDestroyed=int(shoes_destroyed),
+        shoesInWarehouse=shoes_in_warehouse,
+        shoesSentToStudio=shoes_sent,
+        shoesReturned=shoes_returned,
+        shoesCardsDestroyed=shoes_cards_destroyed,
+        shoesEmpty=shoes_empty,
+        shoesPhysicallyDamaged=shoes_physically_damaged,
+        shoesPhysicallyDestroyed=shoes_physically_destroyed,
+        shoesDestroyed=shoes_cards_destroyed + shoes_physically_destroyed,
         totalShoes=total_shoes,
     )
 
@@ -352,8 +377,17 @@ def send_shoe_to_studio(
         raise HTTPException(status_code=404, detail="Shoe not found")
     if shoe.status == ShoeStatus.SENT_TO_STUDIO:
         raise HTTPException(status_code=400, detail="Shoe has already been sent to a studio")
-    if shoe.status == ShoeStatus.DESTROYED:
-        raise HTTPException(status_code=400, detail="Cannot send a destroyed shoe to a studio")
+    if shoe.status in (
+        ShoeStatus.CARDS_DESTROYED,
+        ShoeStatus.DESTROYED,
+        ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE,
+        ShoeStatus.PHYSICALLY_DAMAGED,
+        ShoeStatus.PHYSICALLY_DESTROYED,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot send a shoe in status '{shoe.status.value}' to a studio",
+        )
     if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED):
         raise HTTPException(status_code=400, detail="Shoe is not in a sendable state")
 
@@ -395,8 +429,14 @@ def return_shoe_from_studio(
     shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
     if not shoe:
         raise HTTPException(status_code=404, detail="Shoe not found")
-    if shoe.status == ShoeStatus.DESTROYED:
-        raise HTTPException(status_code=400, detail="Cannot return a destroyed shoe")
+    if shoe.status in (
+        ShoeStatus.CARDS_DESTROYED,
+        ShoeStatus.DESTROYED,
+        ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE,
+        ShoeStatus.PHYSICALLY_DAMAGED,
+        ShoeStatus.PHYSICALLY_DESTROYED,
+    ):
+        raise HTTPException(status_code=400, detail="Cannot return a shoe in its current state")
     if shoe.status == ShoeStatus.RETURNED:
         raise HTTPException(status_code=400, detail="Shoe has already been returned")
     if shoe.status != ShoeStatus.SENT_TO_STUDIO:
@@ -428,44 +468,63 @@ def return_shoe_from_studio(
 
 
 @router.post("/shoes/{shoe_id}/destroy", response_model=ShoeOut)
-def destroy_shoe(
+def destroy_cards(
     shoe_id: int,
     body: DestroyShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
-    """Permanently destroy a shoe (mark as DESTROYED).
+    """Destroy the cards inside a shoe (NOT the physical shoe container).
 
-    - Cannot destroy an already-destroyed shoe.
-    - Cannot destroy a shoe that is currently in a studio (must be returned first).
-    - Decks for a RETURNED shoe are permanently removed from the pool.
-    - Decks for an IN_WAREHOUSE shoe are permanently removed (no change needed
-      since they were consumed on creation and never returned).
+    The shoe container remains in the warehouse.  Only the cards are permanently
+    removed from inventory.  Deck pool is reduced by DECKS_PER_SHOE permanently.
+
+    Valid starting states: IN_WAREHOUSE, RETURNED.
+    Resulting status: CARDS_DESTROYED.
+
+    The shoe can later be recovered as an empty container via the
+    POST /shoes/{id}/recover-shoe endpoint (one-time only).
     """
     shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
     if not shoe:
         raise HTTPException(status_code=404, detail="Shoe not found")
-    if shoe.status == ShoeStatus.DESTROYED:
-        raise HTTPException(status_code=400, detail="Shoe has already been destroyed")
+    if shoe.status in (
+        ShoeStatus.CARDS_DESTROYED,
+        ShoeStatus.DESTROYED,
+        ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE,
+    ):
+        raise HTTPException(status_code=400, detail="Cards have already been destroyed for this shoe")
     if shoe.status == ShoeStatus.SENT_TO_STUDIO:
         raise HTTPException(
             status_code=400,
-            detail="Cannot destroy a shoe that is currently in a studio. Return it first.",
+            detail="Cannot destroy cards while shoe is in a studio. Return it first.",
         )
+    if shoe.status in (ShoeStatus.PHYSICALLY_DAMAGED, ShoeStatus.PHYSICALLY_DESTROYED):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot destroy cards on a physically damaged or destroyed shoe",
+        )
+    if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED):
+        raise HTTPException(status_code=400, detail="Shoe is not in a valid state for card destruction")
 
-    shoe.status = ShoeStatus.DESTROYED
+    shoe.status = ShoeStatus.CARDS_DESTROYED
     shoe.destroyedById = current_user.id
     shoe.destroyedAt = datetime.utcnow()
     shoe.destroyReason = body.reason
 
     log_action(
         db,
-        "DESTROY_SHOE",
+        "DESTROY_CARDS",
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
-        detail={"color": shoe.color.value, "reason": body.reason},
+        detail={
+            "color": shoe.color.value,
+            "reason": body.reason,
+            "decksDeducted": DECKS_PER_SHOE,
+            "shoeRemains": True,
+        },
         request=request,
     )
     db.commit()
@@ -481,20 +540,27 @@ def replace_shoe(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
-    """Replace a destroyed shoe with a new one sharing the same display number.
+    """Replace a physically-destroyed shoe with a new one sharing the same display number.
 
+    Only shoes with status PHYSICALLY_DESTROYED can be replaced.
     Creates a brand-new Shoe entity with the same ``shoeNumber`` as the
     destroyed shoe.  Consumes DECKS_PER_SHOE decks from inventory exactly like
     a normal shoe creation.  Optionally sends the new shoe directly to a studio
     if ``studioId`` is provided in the request body.
+
+    For shoes in CARDS_DESTROYED state use the recover-shoe endpoint instead.
     """
     original = db.query(Shoe).filter(Shoe.id == shoe_id).first()
     if not original:
         raise HTTPException(status_code=404, detail="Shoe not found")
-    if original.status != ShoeStatus.DESTROYED:
+    if original.status != ShoeStatus.PHYSICALLY_DESTROYED:
         raise HTTPException(
             status_code=400,
-            detail="Only destroyed shoes can be replaced.  Current status: " + original.status.value,
+            detail=(
+                "Only physically destroyed shoes can be replaced with a new shoe. "
+                "Current status: " + original.status.value + ". "
+                "For shoes with destroyed cards use the recover-shoe endpoint."
+            ),
         )
 
     available = _get_available_decks(db, original.color)
@@ -542,6 +608,182 @@ def replace_shoe(
     db.commit()
     db.refresh(new_shoe)
     return new_shoe
+
+
+@router.post("/shoes/{shoe_id}/recover-shoe", response_model=ShoeOut)
+def recover_shoe(
+    shoe_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Recover the physical shoe container after its cards have been destroyed.
+
+    Transitions CARDS_DESTROYED → EMPTY_SHOE_IN_WAREHOUSE.
+
+    Rules:
+    - Only allowed ONCE per destroyed-cards event (enforced by status transition).
+    - Cards remain destroyed — NO deck inventory increase.
+    - Only the physical shoe container is restored for future use.
+    """
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status == ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE:
+        raise HTTPException(
+            status_code=400,
+            detail="Shoe has already been recovered — it is currently an empty shoe in the warehouse",
+        )
+    if shoe.status not in (ShoeStatus.CARDS_DESTROYED, ShoeStatus.DESTROYED):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only shoes with status CARDS_DESTROYED can be recovered. "
+                "Current status: " + shoe.status.value
+            ),
+        )
+
+    shoe.status = ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE
+    shoe.recoveredById = current_user.id
+    shoe.recoveredAt = datetime.utcnow()
+
+    log_action(
+        db,
+        "RECOVER_SHOE",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={
+            "color": shoe.color.value,
+            "shoeNumber": shoe.shoeNumber,
+            "deckIncrease": 0,
+            "note": "Shoe container recovered; cards remain destroyed",
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
+
+
+@router.post("/shoes/{shoe_id}/report-physical-damage", response_model=ShoeOut)
+def report_physical_damage(
+    shoe_id: int,
+    body: ReportPhysicalDamageRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Report a shoe as physically damaged.
+
+    Transitions RETURNED or EMPTY_SHOE_IN_WAREHOUSE → PHYSICALLY_DAMAGED.
+
+    Physical damage is ONLY for shoes with verified structural/physical damage
+    (broken, cracked, unusable container).  This is NOT for card depletion or
+    routine usage — use the destroy-cards endpoint for that.
+
+    Cards must be already accounted for before reporting physical damage:
+    - RETURNED: cards were returned to the deck pool (via return-from-studio).
+    - EMPTY_SHOE_IN_WAREHOUSE: cards were destroyed (via destroy endpoint).
+
+    After reporting, an admin/manager must confirm physical destruction via
+    POST /shoes/{id}/confirm-physical-destroy.
+    """
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status == ShoeStatus.PHYSICALLY_DAMAGED:
+        raise HTTPException(status_code=400, detail="Physical damage has already been reported for this shoe")
+    if shoe.status == ShoeStatus.PHYSICALLY_DESTROYED:
+        raise HTTPException(status_code=400, detail="Shoe has already been physically destroyed")
+    if shoe.status not in (ShoeStatus.RETURNED, ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Physical damage can only be reported for shoes in RETURNED or "
+                "EMPTY_SHOE_IN_WAREHOUSE status. "
+                "Current status: " + shoe.status.value + ". "
+                "Ensure cards are returned or destroyed before reporting physical damage."
+            ),
+        )
+
+    shoe.status = ShoeStatus.PHYSICALLY_DAMAGED
+    shoe.physicalDamageReason = body.reason
+    shoe.physicalDamageAt = datetime.utcnow()
+    shoe.physicalDamageById = current_user.id
+
+    log_action(
+        db,
+        "REPORT_PHYSICAL_DAMAGE",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={
+            "color": shoe.color.value,
+            "shoeNumber": shoe.shoeNumber,
+            "reason": body.reason,
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
+
+
+@router.post("/shoes/{shoe_id}/confirm-physical-destroy", response_model=ShoeOut)
+def confirm_physical_destroy(
+    shoe_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Confirm physical destruction of a damaged shoe (irreversible).
+
+    Transitions PHYSICALLY_DAMAGED → PHYSICALLY_DESTROYED.
+
+    ⚠ This action is IRREVERSIBLE and applies only to physically damaged shoes.
+    The shoe is fully removed from service.  A replacement shoe can be created
+    via POST /shoes/{id}/replace (consumes 8 decks from inventory).
+
+    Deck pool impact: none (cards were already returned or destroyed when
+    physical damage was reported).
+    """
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status == ShoeStatus.PHYSICALLY_DESTROYED:
+        raise HTTPException(status_code=400, detail="Shoe has already been physically destroyed")
+    if shoe.status != ShoeStatus.PHYSICALLY_DAMAGED:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only shoes in PHYSICALLY_DAMAGED status can be confirmed as destroyed. "
+                "Current status: " + shoe.status.value + ". "
+                "Use the report-physical-damage endpoint first."
+            ),
+        )
+
+    shoe.status = ShoeStatus.PHYSICALLY_DESTROYED
+    shoe.physicallyDestroyedAt = datetime.utcnow()
+    shoe.physicallyDestroyedById = current_user.id
+
+    log_action(
+        db,
+        "CONFIRM_PHYSICAL_DESTROY",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={
+            "color": shoe.color.value,
+            "shoeNumber": shoe.shoeNumber,
+            "damageReason": shoe.physicalDamageReason,
+            "warning": "Irreversible — shoe fully removed from service",
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
 
 
 # ── Stock Forecast ─────────────────────────────────────────────────────────────

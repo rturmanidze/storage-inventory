@@ -185,23 +185,36 @@ DECKS_PER_SHOE = 8
 
 
 def _get_available_decks_report(db: Session, color: CardColor) -> int:
-    """Mirrors the calculation in cards.py without importing it to avoid circular deps."""
+    """Mirrors the calculation in cards.py without importing it to avoid circular deps.
+
+    Available = total_added - holding_shoes*8 - cards_destroyed_shoes*8
+    See cards.py _get_available_decks for full accounting explanation.
+    """
     total_added = (
         db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
         .filter(DeckEntry.color == color)
         .scalar()
         or 0
     )
-    consuming_shoes = (
+    holding_shoes = (
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.color == color,
-            Shoe.status != ShoeStatus.RETURNED,
+            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO]),
         )
         .scalar()
         or 0
     )
-    return int(total_added) - (int(consuming_shoes) * DECKS_PER_SHOE)
+    cards_destroyed_shoes = (
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.destroyedAt.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+    return int(total_added) - (int(holding_shoes) + int(cards_destroyed_shoes)) * DECKS_PER_SHOE
 
 
 @router.get("/cards/summary", response_model=CardReportSummary)
@@ -223,8 +236,20 @@ def get_card_report_summary(
     shoes_returned = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.RETURNED).scalar() or 0
     )
-    shoes_destroyed = int(
-        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.DESTROYED).scalar() or 0
+    shoes_cards_destroyed = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.status.in_([ShoeStatus.CARDS_DESTROYED, ShoeStatus.DESTROYED]))
+        .scalar()
+        or 0
+    )
+    shoes_empty = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE).scalar() or 0
+    )
+    shoes_physically_damaged = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DAMAGED).scalar() or 0
+    )
+    shoes_physically_destroyed = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED).scalar() or 0
     )
     total_shoes = (
         db.query(func.count(Shoe.id)).scalar() or 0
@@ -287,7 +312,11 @@ def get_card_report_summary(
         shoesInWarehouse=shoes_in_warehouse,
         shoesSentToStudio=shoes_sent,
         shoesReturned=shoes_returned,
-        shoesDestroyed=shoes_destroyed,
+        shoesCardsDestroyed=shoes_cards_destroyed,
+        shoesEmpty=shoes_empty,
+        shoesPhysicallyDamaged=shoes_physically_damaged,
+        shoesPhysicallyDestroyed=shoes_physically_destroyed,
+        shoesDestroyed=shoes_cards_destroyed + shoes_physically_destroyed,
         totalShoes=int(total_shoes),
         dailyConsumption=daily_consumption,
     )
@@ -319,9 +348,16 @@ def export_destroyed_shoes_csv(
             "created_by": s.createdBy.username if s.createdBy else "",
             "sent_at": s.sentAt.isoformat() if s.sentAt else "",
             "returned_at": s.returnedAt.isoformat() if s.returnedAt else "",
-            "destroyed_at": s.destroyedAt.isoformat() if s.destroyedAt else "",
-            "destroyed_by": s.destroyedBy.username if s.destroyedBy else "",
-            "destroy_reason": s.destroyReason or "",
+            "cards_destroyed_at": s.destroyedAt.isoformat() if s.destroyedAt else "",
+            "cards_destroyed_by": s.destroyedBy.username if s.destroyedBy else "",
+            "cards_destroy_reason": s.destroyReason or "",
+            "recovered_at": s.recoveredAt.isoformat() if s.recoveredAt else "",
+            "recovered_by": s.recoveredBy.username if s.recoveredBy else "",
+            "physical_damage_at": s.physicalDamageAt.isoformat() if s.physicalDamageAt else "",
+            "physical_damage_by": s.physicalDamageBy.username if s.physicalDamageBy else "",
+            "physical_damage_reason": s.physicalDamageReason or "",
+            "physically_destroyed_at": s.physicallyDestroyedAt.isoformat() if s.physicallyDestroyedAt else "",
+            "physically_destroyed_by": s.physicallyDestroyedBy.username if s.physicallyDestroyedBy else "",
             "studio": s.studio.name if s.studio else "",
         })
     return _csv_response(rows, "shoes_export.csv")

@@ -9,18 +9,35 @@ interface Studio {
   name: string
 }
 
+type ShoeStatus =
+  | 'IN_WAREHOUSE'
+  | 'SENT_TO_STUDIO'
+  | 'RETURNED'
+  | 'CARDS_DESTROYED'
+  | 'DESTROYED'
+  | 'EMPTY_SHOE_IN_WAREHOUSE'
+  | 'PHYSICALLY_DAMAGED'
+  | 'PHYSICALLY_DESTROYED'
+
 interface Shoe {
   id: number
   shoeNumber: number
   color: 'BLACK' | 'RED'
-  status: 'IN_WAREHOUSE' | 'SENT_TO_STUDIO' | 'RETURNED' | 'DESTROYED'
+  status: ShoeStatus
   studioId: number | null
   studio: Studio | null
   createdAt: string
   destroyedAt: string | null
   destroyReason: string | null
+  recoveredAt: string | null
+  physicalDamageReason: string | null
+  physicalDamageAt: string | null
+  physicallyDestroyedAt: string | null
   createdBy: { id: number; username: string } | null
   destroyedBy: { id: number; username: string } | null
+  recoveredBy: { id: number; username: string } | null
+  physicalDamageBy: { id: number; username: string } | null
+  physicallyDestroyedBy: { id: number; username: string } | null
 }
 
 function ColorBadge({ color }: { color: 'BLACK' | 'RED' }) {
@@ -33,16 +50,26 @@ function ColorBadge({ color }: { color: 'BLACK' | 'RED' }) {
   )
 }
 
+type ViewFilter = 'ALL' | 'CARDS_DESTROYED' | 'PHYSICALLY_DESTROYED'
+
 export default function DestroyedShoes() {
   const { user } = useAuth()
   const qc = useQueryClient()
+  const [recoverShoe, setRecoverShoe] = useState<Shoe | null>(null)
   const [replaceShoe, setReplaceShoe] = useState<Shoe | null>(null)
   const [replaceStudioId, setReplaceStudioId] = useState<number | ''>('')
+  const [viewFilter, setViewFilter] = useState<ViewFilter>('ALL')
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
 
-  const { data: shoes = [], isLoading } = useQuery<Shoe[]>({
+  const { data: allShoes = [], isLoading } = useQuery<Shoe[]>({
     queryKey: ['shoes-destroyed'],
-    queryFn: () => api.get('/cards/shoes?status=DESTROYED').then(r => r.data),
+    queryFn: async () => {
+      const [cardsDestroyed, physDestroyed] = await Promise.all([
+        api.get('/cards/shoes?status=CARDS_DESTROYED').then(r => r.data),
+        api.get('/cards/shoes?status=PHYSICALLY_DESTROYED').then(r => r.data),
+      ])
+      return [...cardsDestroyed, ...physDestroyed]
+    },
     refetchInterval: 30_000,
   })
 
@@ -51,10 +78,29 @@ export default function DestroyedShoes() {
     queryFn: () => api.get('/studios').then(r => r.data),
   })
 
+  const shoes = viewFilter === 'ALL'
+    ? allShoes
+    : viewFilter === 'CARDS_DESTROYED'
+      ? allShoes.filter(s => s.status === 'CARDS_DESTROYED' || s.status === 'DESTROYED')
+      : allShoes.filter(s => s.status === 'PHYSICALLY_DESTROYED')
+
+  const recoverMutation = useMutation({
+    mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/recover-shoe`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shoes-destroyed'] })
+      qc.invalidateQueries({ queryKey: ['shoes'] })
+      qc.invalidateQueries({ queryKey: ['card-inventory'] })
+      qc.invalidateQueries({ queryKey: ['dashboard-card-stats'] })
+      toast.success(`Shoe #${recoverShoe?.shoeNumber} recovered — empty container now in warehouse`)
+      setRecoverShoe(null)
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to recover shoe'),
+  })
+
   const replaceMutation = useMutation({
     mutationFn: ({ shoeId, studioId }: { shoeId: number; studioId?: number }) =>
       api.post(`/cards/shoes/${shoeId}/replace`, studioId ? { studioId } : {}),
-    onSuccess: (_, vars) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['shoes-destroyed'] })
       qc.invalidateQueries({ queryKey: ['shoes'] })
       qc.invalidateQueries({ queryKey: ['card-inventory'] })
@@ -76,7 +122,7 @@ export default function DestroyedShoes() {
 
   function downloadCSV() {
     const token = localStorage.getItem('token') ?? ''
-    fetch('/api/reports/cards/shoes/csv?status=DESTROYED', {
+    fetch('/api/reports/cards/shoes/csv', {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.blob())
@@ -84,11 +130,25 @@ export default function DestroyedShoes() {
         const href = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = href
-        a.download = 'destroyed_shoes_export.csv'
+        a.download = 'shoes_export.csv'
         a.click()
         URL.revokeObjectURL(href)
       })
   }
+
+  const filterOptions: { value: ViewFilter; label: string; count: number }[] = [
+    { value: 'ALL', label: 'All', count: allShoes.length },
+    {
+      value: 'CARDS_DESTROYED',
+      label: 'Cards Destroyed',
+      count: allShoes.filter(s => s.status === 'CARDS_DESTROYED' || s.status === 'DESTROYED').length,
+    },
+    {
+      value: 'PHYSICALLY_DESTROYED',
+      label: 'Physically Destroyed',
+      count: allShoes.filter(s => s.status === 'PHYSICALLY_DESTROYED').length,
+    },
+  ]
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -96,7 +156,7 @@ export default function DestroyedShoes() {
         <div>
           <h1 className="page-title">Destroyed Shoes</h1>
           <p className="page-subtitle">
-            Full traceable record of all destroyed shoes — {shoes.length} total
+            Full record of card destructions and physically destroyed shoes — {allShoes.length} total
           </p>
         </div>
         {canEdit && (
@@ -109,18 +169,49 @@ export default function DestroyedShoes() {
         )}
       </div>
 
-      {/* Info banner */}
-      <div className="rounded-xl bg-amber-50 border border-amber-200 px-5 py-4 flex items-start gap-3">
-        <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-        </svg>
-        <div className="text-sm text-amber-700">
-          <p className="font-semibold">Destroyed shoes cannot be restored or reused directly.</p>
-          <p className="mt-0.5 text-amber-600">
-            Use <strong>Replace Shoe</strong> to create a new shoe with the same display number.
-            The replacement is a separate entity with its own lifecycle.
-          </p>
+      {/* Info banners */}
+      <div className="space-y-3">
+        <div className="rounded-xl bg-amber-50 border border-amber-200 px-5 py-4 flex items-start gap-3">
+          <svg className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+          </svg>
+          <div className="text-sm text-amber-700">
+            <p className="font-semibold">Cards Destroyed — shoe container remains</p>
+            <p className="mt-0.5 text-amber-600">
+              Use <strong>Recover Shoe (Empty)</strong> to retrieve the physical shoe container.
+              This can only be done <strong>once</strong> per destroyed-cards record. No deck inventory increase.
+            </p>
+          </div>
         </div>
+        <div className="rounded-xl bg-rose-50 border border-rose-200 px-5 py-4 flex items-start gap-3">
+          <svg className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+          </svg>
+          <div className="text-sm text-rose-700">
+            <p className="font-semibold">Physically Destroyed — shoe container is gone</p>
+            <p className="mt-0.5 text-rose-600">
+              Use <strong>Replace Shoe</strong> to create a brand-new shoe with the same display number.
+              The replacement consumes 8 decks from inventory.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-2">
+        {filterOptions.map(f => (
+          <button
+            key={f.value}
+            onClick={() => setViewFilter(f.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              viewFilter === f.value
+                ? 'bg-primary-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            {f.label} ({f.count})
+          </button>
+        ))}
       </div>
 
       {/* Table */}
@@ -137,7 +228,7 @@ export default function DestroyedShoes() {
             <svg className="w-10 h-10 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
             </svg>
-            No destroyed shoes on record
+            No records found
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -145,49 +236,106 @@ export default function DestroyedShoes() {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shoe #</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Destruction Date</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Event Date</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reason</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Destroyed By</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">By</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
                 {canEdit && <th className="px-4 py-3" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {shoes.map(shoe => (
-                <tr key={shoe.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3 font-mono font-semibold text-gray-700">
-                    Shoe #{shoe.shoeNumber}
-                    <span className="ml-2 text-2xs text-gray-300">id:{shoe.id}</span>
-                  </td>
-                  <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
-                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
-                    {shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 max-w-xs">
-                    <span className="block truncate" title={shoe.destroyReason ?? ''}>
-                      {shoe.destroyReason ?? '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{shoe.destroyedBy?.username ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">
-                    {new Date(shoe.createdAt).toLocaleString()}
-                  </td>
-                  {canEdit && (
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        className="btn-sm btn-primary"
-                        onClick={() => { setReplaceShoe(shoe); setReplaceStudioId('') }}
-                      >
-                        Replace Shoe
-                      </button>
+              {shoes.map(shoe => {
+                const isCardsDestroyed = shoe.status === 'CARDS_DESTROYED' || shoe.status === 'DESTROYED'
+                const isPhysicallyDestroyed = shoe.status === 'PHYSICALLY_DESTROYED'
+                const eventDate = isCardsDestroyed
+                  ? (shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : '—')
+                  : (shoe.physicallyDestroyedAt ? new Date(shoe.physicallyDestroyedAt).toLocaleString() : '—')
+                const reason = isCardsDestroyed ? (shoe.destroyReason ?? '—') : (shoe.physicalDamageReason ?? '—')
+                const byUser = isCardsDestroyed
+                  ? (shoe.destroyedBy?.username ?? '—')
+                  : (shoe.physicallyDestroyedBy?.username ?? '—')
+                return (
+                  <tr key={shoe.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-mono font-semibold text-gray-700">
+                      Shoe #{shoe.shoeNumber}
+                      <span className="ml-2 text-2xs text-gray-300">id:{shoe.id}</span>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
+                    <td className="px-4 py-3">
+                      {isCardsDestroyed ? (
+                        <span className="badge text-xs status-destroyed">Cards Destroyed</span>
+                      ) : (
+                        <span className="badge text-xs status-destroyed">Physically Destroyed</span>
+                      )}
+                      {isCardsDestroyed && shoe.recoveredAt && (
+                        <p className="text-2xs text-emerald-600 mt-0.5">
+                          Shoe recovered {new Date(shoe.recoveredAt).toLocaleDateString()}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">{eventDate}</td>
+                    <td className="px-4 py-3 text-gray-600 max-w-xs">
+                      <span className="block truncate" title={reason}>{reason}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{byUser}</td>
+                    <td className="px-4 py-3 text-gray-400 whitespace-nowrap text-xs">
+                      {new Date(shoe.createdAt).toLocaleString()}
+                    </td>
+                    {canEdit && (
+                      <td className="px-4 py-3 text-right">
+                        {isCardsDestroyed && !shoe.recoveredAt && (
+                          <button
+                            className="btn-sm btn-secondary"
+                            onClick={() => setRecoverShoe(shoe)}
+                          >
+                            Recover Shoe
+                          </button>
+                        )}
+                        {isPhysicallyDestroyed && (
+                          <button
+                            className="btn-sm btn-primary"
+                            onClick={() => { setReplaceShoe(shoe); setReplaceStudioId('') }}
+                          >
+                            Replace Shoe
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Recover Shoe Modal */}
+      {recoverShoe && (
+        <div className="modal-overlay" onClick={() => setRecoverShoe(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h2 className="text-base font-semibold text-gray-900 mb-1">
+              Recover Empty Shoe #{recoverShoe.shoeNumber}
+            </h2>
+            <p className="text-sm text-gray-500 mb-5">
+              The physical <strong>{recoverShoe.color === 'BLACK' ? 'Black' : 'Red'}</strong> shoe container
+              will be recovered and marked as <strong>Empty Shoe in Warehouse</strong>.
+              Cards remain destroyed — <strong>no deck inventory increase</strong>.
+              This action can only be performed <strong>once</strong>.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button className="btn-ghost" onClick={() => setRecoverShoe(null)}>Cancel</button>
+              <button
+                className="btn-secondary"
+                onClick={() => recoverMutation.mutate(recoverShoe.id)}
+                disabled={recoverMutation.isPending}
+              >
+                {recoverMutation.isPending ? 'Recovering…' : 'Recover Shoe (Empty)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Replace Shoe Modal */}
       {replaceShoe && (
@@ -198,8 +346,8 @@ export default function DestroyedShoes() {
             </h2>
             <p className="text-sm text-gray-500 mb-5">
               A new <strong>{replaceShoe.color === 'BLACK' ? 'Black' : 'Red'}</strong> shoe will be created
-              with display number <strong>#{replaceShoe.shoeNumber}</strong>, consuming 8 decks from inventory.
-              The original destroyed shoe remains in the database for audit purposes.
+              with display number <strong>#{replaceShoe.shoeNumber}</strong>, consuming <strong>8 decks</strong> from inventory.
+              The original physically destroyed shoe remains in the database for audit purposes.
             </p>
 
             <div className="mb-5">
@@ -232,3 +380,4 @@ export default function DestroyedShoes() {
     </div>
   )
 }
+
