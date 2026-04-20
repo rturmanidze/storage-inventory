@@ -17,10 +17,22 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create CardColor enum
-    op.execute("CREATE TYPE \"CardColor\" AS ENUM ('BLACK', 'RED')")
+    # Create CardColor enum (DO block guards against duplicate if migration is re-applied)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "CardColor" AS ENUM ('BLACK', 'RED');
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
     # Create ShoeStatus enum
-    op.execute("CREATE TYPE \"ShoeStatus\" AS ENUM ('IN_WAREHOUSE', 'SENT_TO_STUDIO')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "ShoeStatus" AS ENUM ('IN_WAREHOUSE', 'SENT_TO_STUDIO');
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
 
     # --- Studio ---
     op.create_table(
@@ -69,5 +81,5 @@ def downgrade() -> None:
     op.drop_index("DeckEntry_color_idx", "DeckEntry")
     op.drop_table("DeckEntry")
     op.drop_table("Studio")
-    op.execute("DROP TYPE \"ShoeStatus\"")
-    op.execute("DROP TYPE \"CardColor\"")
+    op.execute("DROP TYPE IF EXISTS \"ShoeStatus\"")
+    op.execute("DROP TYPE IF EXISTS \"CardColor\"")
