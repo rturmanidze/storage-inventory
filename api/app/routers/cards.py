@@ -20,8 +20,9 @@ from app.schemas import (
 
 router = APIRouter(prefix="/cards", tags=["cards"])
 
-DECKS_PER_SHOE = 8
-CARDS_PER_DECK = 52
+# Industry-standard casino card values — do not change without business sign-off
+DECKS_PER_SHOE = 8    # 1 shoe holds exactly 8 decks
+CARDS_PER_DECK = 52   # 1 standard deck = 52 cards (no jokers)
 
 
 def _get_available_decks(db: Session, color: CardColor) -> int:

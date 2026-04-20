@@ -98,11 +98,15 @@ async def receive(
 
 @router.post("/transfer", status_code=status.HTTP_410_GONE)
 async def transfer(*_args, **_kwargs):
+    # Transfer between locations was removed per business decision (Apr 2026).
+    # The system now focuses on receiving, lifecycle management, and audit logs only.
     raise HTTPException(status_code=status.HTTP_410_GONE, detail="Transfer feature has been disabled")
 
 
 @router.post("/issue", status_code=status.HTTP_410_GONE)
 async def issue(*_args, **_kwargs):
+    # Issue Items workflow was removed per business decision (Apr 2026).
+    # Deck/shoe dispatch to studios replaces the issuing concept.
     raise HTTPException(status_code=status.HTTP_410_GONE, detail="Issue Items feature has been disabled")
 
 
