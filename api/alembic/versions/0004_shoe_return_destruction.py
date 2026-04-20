@@ -21,9 +21,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block.
+    # Commit the Alembic-managed transaction, run the ADD VALUE statements (which execute
+    # in autocommit / no-transaction mode), then let subsequent DDL start a new implicit
+    # transaction via SQLAlchemy 2.0's autobegin behaviour.
+    bind = op.get_bind()
+    bind.execute(sa.text("COMMIT"))
+
     # Extend ShoeStatus enum with RETURNED and DESTROYED
-    op.execute("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'RETURNED'")
-    op.execute("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'")
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'RETURNED'"))
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'"))
 
     # Add return-tracking columns to Shoe
     op.add_column("Shoe", sa.Column("returnedAt", sa.DateTime, nullable=True))

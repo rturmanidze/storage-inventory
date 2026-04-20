@@ -24,11 +24,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block.
+    # Commit the Alembic-managed transaction, run the ADD VALUE statements (which execute
+    # in autocommit / no-transaction mode), then let subsequent DDL start a new implicit
+    # transaction via SQLAlchemy 2.0's autobegin behaviour.
+    bind = op.get_bind()
+    bind.execute(sa.text("COMMIT"))
+
     # Extend ShoeStatus with new lifecycle values
-    op.execute("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'CARDS_DESTROYED'")
-    op.execute("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'EMPTY_SHOE_IN_WAREHOUSE'")
-    op.execute("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'PHYSICALLY_DAMAGED'")
-    op.execute("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'PHYSICALLY_DESTROYED'")
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'CARDS_DESTROYED'"))
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'EMPTY_SHOE_IN_WAREHOUSE'"))
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'PHYSICALLY_DAMAGED'"))
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'PHYSICALLY_DESTROYED'"))
 
     # Migrate existing DESTROYED records → CARDS_DESTROYED
     # (the old destroy workflow was always destroying cards, not the physical container)

@@ -18,12 +18,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Extend UnitStatus enum with new values.
-    # In PostgreSQL 12+ ADD VALUE is allowed inside a transaction
-    # as long as the new values aren't used in the same transaction.
-    op.execute("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DAMAGED'")
-    op.execute("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'EXPIRED'")
-    op.execute("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'")
+    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block
+    # (on all versions prior to 12, and for maximum portability).  Commit the
+    # Alembic-managed transaction, run ADD VALUE in autocommit mode, then let
+    # subsequent DDL start a new implicit transaction via SQLAlchemy 2.0 autobegin.
+    bind = op.get_bind()
+    bind.execute(sa.text("COMMIT"))
+
+    # Extend UnitStatus enum with new values
+    bind.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DAMAGED'"))
+    bind.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'EXPIRED'"))
+    bind.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'"))
 
     # --- AuditLog ---
     op.create_table(
