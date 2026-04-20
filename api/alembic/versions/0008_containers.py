@@ -16,6 +16,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0008_containers"
 down_revision: Union[str, None] = "0007_shoe_refill"
@@ -50,10 +51,10 @@ def upgrade() -> None:
         "Container",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("code", sa.String, nullable=False, unique=True),
-        sa.Column("color", sa.Enum("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
+        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
         sa.Column(
             "material",
-            sa.Enum("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
+            postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
             nullable=False,
         ),
         sa.Column("decksRemaining", sa.Integer, nullable=False, server_default="200"),
@@ -74,7 +75,7 @@ def upgrade() -> None:
         sa.Column("containerId", sa.Integer, sa.ForeignKey("Container.id", ondelete="CASCADE"), nullable=False),
         sa.Column(
             "eventType",
-            sa.Enum(
+            postgresql.ENUM(
                 "CREATED", "LOCKED", "UNLOCKED", "DECK_CONSUMED", "ARCHIVED",
                 name="ContainerEventType",
                 create_type=False,
@@ -94,7 +95,7 @@ def upgrade() -> None:
         "DeckEntry",
         sa.Column(
             "material",
-            sa.Enum("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
+            postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
             nullable=True,
         ),
     )
