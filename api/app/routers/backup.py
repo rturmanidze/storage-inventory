@@ -189,8 +189,9 @@ def delete_backup(
 
     os.remove(filepath)
 
-    # Remove the date directory if it is now empty
-    date_path = os.path.join(BACKUP_DIR, date_dir)
+    # Remove the date directory if it is now empty — derive path from
+    # the already-validated filepath to avoid raw user-input in path ops.
+    date_path = os.path.dirname(filepath)
     if os.path.isdir(date_path) and not os.listdir(date_path):
         os.rmdir(date_path)
 
