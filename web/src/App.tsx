@@ -21,8 +21,12 @@ import Studios from './pages/Studios'
 import Decks from './pages/Decks'
 import Shoes from './pages/Shoes'
 import DestroyedShoes from './pages/DestroyedShoes'
+import Backups from './pages/Backups'
+import { useAuth } from './contexts/AuthContext'
 
 function AppWithProviders() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'ADMIN'
   return (
     <WebSocketProvider>
       <NotificationProvider>
@@ -47,6 +51,7 @@ function AppWithProviders() {
               <Route path="/decks" element={<Decks />} />
               <Route path="/shoes" element={<Shoes />} />
               <Route path="/shoes/destroyed" element={<DestroyedShoes />} />
+              {isAdmin && <Route path="/backups" element={<Backups />} />}
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

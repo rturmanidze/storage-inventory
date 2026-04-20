@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -5,6 +7,7 @@ from app.auth import decode_token
 from app.routers import (
     audit,
     auth,
+    backup,
     cards,
     dashboard,
     deck_inventory,
@@ -20,9 +23,18 @@ from app.routers import (
     users,
     warehouses,
 )
+from app.scheduler import start_scheduler, stop_scheduler
 from app.websocket import manager as ws_manager
 
-app = FastAPI(title="Storage Inventory API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
+app = FastAPI(title="Storage Inventory API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +61,7 @@ _routers = [
     studios.router,
     cards.router,
     deck_inventory.router,
+    backup.router,
 ]
 
 for router in _routers:
