@@ -402,7 +402,7 @@ class Shoe(Base):
     __tablename__ = "Shoe"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    shoeNumber = Column(Integer, nullable=False, default=0)
+    shoeNumber = Column(String, nullable=False, default="0")
     color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
     material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=True)
     status = Column(

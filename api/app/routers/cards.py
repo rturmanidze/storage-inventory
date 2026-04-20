@@ -293,21 +293,52 @@ def _auto_create_containers(
 ) -> list:
     """Split *deck_count* into containers of CONTAINER_CAPACITY and persist them.
 
-    Each container also creates a matching DeckEntry (same pattern as the
-    manual container-creation endpoint).  Returns the list of DeckEntry records
-    so the caller can build the API response.
+    Creates a single DeckEntry for the full *deck_count* (so Deck Receiving
+    History shows one row per user action, not one row per container split).
+    Then creates as many Container records as needed (max CONTAINER_CAPACITY
+    decks each).  Returns the single DeckEntry in a list to satisfy the
+    caller's expected return type.
     """
     from app.models import ContainerEvent, ContainerEventType  # local import to avoid circular
 
     now = datetime.utcnow()
+
+    # ONE DeckEntry for the full amount — this is what shows in history
+    entry = DeckEntry(
+        color=color,
+        material=material,
+        deckCount=deck_count,
+        cardCount=deck_count * CARDS_PER_DECK,
+        note=note,
+        createdById=user_id,
+        createdAt=now,
+    )
+    db.add(entry)
+    db.flush()
+
+    log_action(
+        db,
+        "ADD_DECKS",
+        user_id=user_id,
+        resource_type="deck_entry",
+        resource_id=entry.id,
+        detail={
+            "color": color.value,
+            "material": material.value,
+            "deckCount": deck_count,
+            "cardCount": deck_count * CARDS_PER_DECK,
+            "note": note,
+        },
+        request=request,
+    )
+
+    # Split into containers (max CONTAINER_CAPACITY each)
     remaining = deck_count
-    entries = []
     idx = 1
     while remaining > 0:
         batch = min(remaining, CONTAINER_CAPACITY)
         remaining -= batch
 
-        # Generate a unique container code based on timestamp + sequential index
         ts = now.strftime("%Y%m%d%H%M%S")
         code = f"AUTO-{color.value[:1]}-{material.value[:2]}-{ts}-{idx:03d}"
         idx += 1
@@ -324,46 +355,32 @@ def _auto_create_containers(
         db.add(container)
         db.flush()
 
-        created_event = ContainerEvent(
+        db.add(ContainerEvent(
             containerId=container.id,
             eventType=ContainerEventType.CREATED,
             userId=user_id,
             note=f"Auto-created from deck addition — {batch} decks",
             createdAt=now,
-        )
-        db.add(created_event)
-
-        entry = DeckEntry(
-            color=color,
-            material=material,
-            deckCount=batch,
-            cardCount=batch * CARDS_PER_DECK,
-            note=note or f"Auto-created container {code}",
-            createdById=user_id,
-            createdAt=now,
-        )
-        db.add(entry)
-        db.flush()
+        ))
 
         log_action(
             db,
-            "ADD_DECKS",
+            "CREATE_CONTAINER",
             user_id=user_id,
-            resource_type="deck_entry",
-            resource_id=entry.id,
+            resource_type="container",
+            resource_id=container.id,
             detail={
+                "code": code,
                 "color": color.value,
                 "material": material.value,
                 "deckCount": batch,
-                "cardCount": batch * CARDS_PER_DECK,
-                "containerCode": code,
                 "autoCreated": True,
+                "deckEntryId": entry.id,
             },
             request=request,
         )
-        entries.append(entry)
 
-    return entries
+    return [entry]
 
 
 @router.post("/decks", response_model=AddDecksResponse, status_code=status.HTTP_201_CREATED)
@@ -495,10 +512,8 @@ def create_shoe(
                 f"Available: {available}, required: {DECKS_PER_SHOE}"
             ),
         )
-    # Assign the next sequential shoe number (max across ALL shoes + 1)
-    max_number = db.query(func.coalesce(func.max(Shoe.shoeNumber), 0)).scalar() or 0
     shoe = Shoe(
-        shoeNumber=int(max_number) + 1,
+        shoeNumber=body.shoeNumber,
         color=body.color,
         material=body.material,
         status=ShoeStatus.IN_WAREHOUSE,

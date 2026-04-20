@@ -19,7 +19,7 @@ from app.auth import get_current_user, require_roles
 from app.database import get_db
 from app.models import CardColor, CardMaterial, Container, ContainerEvent, ContainerEventType, DeckEntry, Role, User
 from app.routers.cards import CARDS_PER_DECK
-from app.schemas import ContainerCreate, ContainerOut
+from app.schemas import ContainerCreate, ContainerOut, ContainerRenameRequest
 
 router = APIRouter(prefix="/containers", tags=["containers"])
 
@@ -282,6 +282,43 @@ def unlock_container(
         db, "UNLOCK_CONTAINER", user_id=current_user.id,
         resource_type="container", resource_id=container_id,
         detail={"code": container.code},
+        request=request,
+    )
+    db.commit()
+    db.refresh(container)
+    return container
+
+
+@router.patch("/{container_id}/rename", response_model=ContainerOut)
+def rename_container(
+    container_id: int,
+    body: ContainerRenameRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Rename a container (Admin / Manager). Does not affect internal ID or event history."""
+    container = _get_container_or_404(db, container_id)
+
+    # Ensure new code is unique (skip self-comparison)
+    existing = (
+        db.query(Container)
+        .filter(Container.code == body.code, Container.id != container_id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Container code '{body.code}' is already in use",
+        )
+
+    old_code = container.code
+    container.code = body.code
+
+    log_action(
+        db, "RENAME_CONTAINER", user_id=current_user.id,
+        resource_type="container", resource_id=container_id,
+        detail={"oldCode": old_code, "newCode": body.code},
         request=request,
     )
     db.commit()

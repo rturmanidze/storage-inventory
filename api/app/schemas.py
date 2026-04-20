@@ -450,9 +450,14 @@ class AddDecksResponse(BaseModel):
     material: CardMaterial
 
 
+class ContainerRenameRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+
+
 class CreateShoeRequest(BaseModel):
     color: CardColor
     material: CardMaterial
+    shoeNumber: str = Field(min_length=1, max_length=32)
 
 
 class SendShoeRequest(BaseModel):
@@ -461,7 +466,7 @@ class SendShoeRequest(BaseModel):
 
 class ShoeOut(OrmBase):
     id: int
-    shoeNumber: int
+    shoeNumber: str
     color: CardColor
     material: Optional[CardMaterial] = None
     status: ShoeStatus

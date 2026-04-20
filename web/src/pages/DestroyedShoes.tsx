@@ -21,7 +21,7 @@ type ShoeStatus =
 
 interface Shoe {
   id: number
-  shoeNumber: number
+  shoeNumber: string
   color: 'BLACK' | 'RED'
   status: ShoeStatus
   studioId: number | null

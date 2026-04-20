@@ -103,6 +103,8 @@ export default function Containers() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [detailContainer, setDetailContainer] = useState<ContainerInfo | null>(null)
+  const [renameContainer, setRenameContainer] = useState<ContainerInfo | null>(null)
+  const [renameCode, setRenameCode] = useState('')
   const [colorFilter, setColorFilter] = useState<'ALL' | 'BLACK' | 'RED'>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'LOCKED' | 'ARCHIVED'>('ALL')
 
@@ -176,6 +178,21 @@ export default function Containers() {
       }
     },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Unlock failed'),
+  })
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, code }: { id: number; code: string }) =>
+      api.patch(`/containers/${id}/rename`, { code }),
+    onSuccess: (res, { id }) => {
+      qc.invalidateQueries({ queryKey: ['containers'] })
+      toast.success('Container renamed')
+      setRenameContainer(null)
+      setRenameCode('')
+      if (detailContainer?.id === id) {
+        api.get(`/containers/${id}`).then(r => setDetailContainer(r.data))
+      }
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Rename failed'),
   })
 
   function openDetail(c: ContainerInfo) {
@@ -318,6 +335,14 @@ export default function Containers() {
                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{formatDate(c.createdAt)}</td>
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-1 justify-end">
+                      {canManage && (
+                        <button
+                          className="btn-ghost btn-sm"
+                          onClick={() => { setRenameContainer(c); setRenameCode(c.code) }}
+                        >
+                          ✏️ Rename
+                        </button>
+                      )}
                       {isAdmin && !c.archivedAt && !c.isLocked && (
                         <button
                           className="btn-secondary btn-sm"
@@ -507,6 +532,16 @@ export default function Containers() {
                 )}
               </div>
             )}
+            {canManage && (
+              <div className="flex gap-2 mb-4 shrink-0">
+                <button
+                  className="btn-ghost btn-sm"
+                  onClick={() => { setRenameContainer(detailContainer); setRenameCode(detailContainer.code) }}
+                >
+                  ✏️ Rename Container
+                </button>
+              </div>
+            )}
 
             {/* Event history */}
             <div className="flex-1 overflow-y-auto">
@@ -543,6 +578,53 @@ export default function Containers() {
               {detailContainer.lockedAt && <span>Locked: {formatDate(detailContainer.lockedAt)}</span>}
               {detailContainer.archivedAt && <span>Archived: {formatDate(detailContainer.archivedAt)}</span>}
               {detailContainer.createdBy && <span>By: {detailContainer.createdBy.username}</span>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Container Modal */}
+      {renameContainer && (
+        <div
+          className="modal-overlay"
+          onClick={e => { if (e.target === e.currentTarget) { setRenameContainer(null); setRenameCode('') } }}
+        >
+          <div className="modal-content w-full max-w-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Rename Container</h2>
+              <button className="btn-ghost btn-sm" onClick={() => { setRenameContainer(null); setRenameCode('') }}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500">
+                Current name: <span className="font-mono font-semibold text-gray-700">{renameContainer.code}</span>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Name</label>
+                <input
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 font-mono"
+                  placeholder="e.g. BLACK-PLASTIC-01"
+                  value={renameCode}
+                  onChange={e => setRenameCode(e.target.value)}
+                  maxLength={64}
+                  autoFocus
+                />
+                <p className="text-xs text-gray-400 mt-1">Renaming does not affect internal ID or history.</p>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  className="btn-ghost flex-1"
+                  onClick={() => { setRenameContainer(null); setRenameCode('') }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary flex-1"
+                  disabled={!renameCode.trim() || renameCode.trim() === renameContainer.code || renameMutation.isPending}
+                  onClick={() => renameMutation.mutate({ id: renameContainer.id, code: renameCode.trim() })}
+                >
+                  {renameMutation.isPending ? 'Saving…' : 'Save Name'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -22,7 +22,7 @@ type ShoeStatus =
 
 interface Shoe {
   id: number
-  shoeNumber: number
+  shoeNumber: string
   color: 'BLACK' | 'RED'
   material: 'PLASTIC' | 'PAPER' | null
   status: ShoeStatus
@@ -123,6 +123,7 @@ export default function Shoes() {
   const [confirmDestroyModalShoe, setConfirmDestroyModalShoe] = useState<Shoe | null>(null)
   const [selectedColor, setSelectedColor] = useState<'BLACK' | 'RED'>('BLACK')
   const [selectedMaterial, setSelectedMaterial] = useState<'PLASTIC' | 'PAPER'>('PLASTIC')
+  const [shoeNumberInput, setShoeNumberInput] = useState('')
   const [selectedStudioId, setSelectedStudioId] = useState<number | ''>('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
@@ -153,9 +154,14 @@ export default function Shoes() {
   }
 
   const createMutation = useMutation({
-    mutationFn: ({ color, material }: { color: 'BLACK' | 'RED'; material: 'PLASTIC' | 'PAPER' }) =>
-      api.post('/cards/shoes', { color, material }),
-    onSuccess: () => { invalidate(); toast.success('Shoe created successfully'); setCreateModalOpen(false) },
+    mutationFn: ({ color, material, shoeNumber }: { color: 'BLACK' | 'RED'; material: 'PLASTIC' | 'PAPER'; shoeNumber: string }) =>
+      api.post('/cards/shoes', { color, material, shoeNumber }),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Shoe created successfully')
+      setCreateModalOpen(false)
+      setShoeNumberInput('')
+    },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to create shoe'),
   })
 
@@ -501,11 +507,11 @@ export default function Shoes() {
 
       {/* Create Shoe Modal */}
       {createModalOpen && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setCreateModalOpen(false) }}>
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setCreateModalOpen(false); setShoeNumberInput('') } }}>
           <div className="modal-content w-full max-w-md">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-semibold text-gray-800">Create New Shoe</h2>
-              <button className="btn-ghost btn-sm" onClick={() => setCreateModalOpen(false)}>✕</button>
+              <button className="btn-ghost btn-sm" onClick={() => { setCreateModalOpen(false); setShoeNumberInput('') }}>✕</button>
             </div>
             <div className="space-y-5">
               <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
@@ -569,12 +575,28 @@ export default function Shoes() {
                 <strong>{selectedMaterial === 'PLASTIC' ? 'Plastic' : 'Paper'}</strong> shoe will consume{' '}
                 <strong>8 decks</strong> ({(8 * 52).toLocaleString()} cards)
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Shoe Number</label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder='e.g. 1, A1, SHOE-05'
+                  value={shoeNumberInput}
+                  onChange={e => setShoeNumberInput(e.target.value)}
+                  maxLength={32}
+                />
+                <p className="text-xs text-gray-400 mt-1">This will be the displayed shoe identifier (e.g. Shoe #A1).</p>
+              </div>
               <div className="flex gap-3 pt-1">
                 <button className="btn-ghost flex-1" onClick={() => setCreateModalOpen(false)}>Cancel</button>
                 <button
                   className="btn-primary flex-1"
-                  disabled={createMutation.isPending || (selectedColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)}
-                  onClick={() => createMutation.mutate({ color: selectedColor, material: selectedMaterial })}
+                  disabled={
+                    createMutation.isPending ||
+                    !shoeNumberInput.trim() ||
+                    (selectedColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)
+                  }
+                  onClick={() => createMutation.mutate({ color: selectedColor, material: selectedMaterial, shoeNumber: shoeNumberInput.trim() })}
                 >
                   {createMutation.isPending ? 'Creating…' : 'Create Shoe'}
                 </button>
