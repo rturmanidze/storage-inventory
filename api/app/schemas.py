@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import IssuedToType, MovementType, Role, UnitStatus
+from app.models import CardColor, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
 
 
 # ── Shared config ──────────────────────────────────────────────────────────────
@@ -398,4 +398,82 @@ class ImportError(BaseModel):
 class ImportResult(BaseModel):
     success: int
     errors: List[ImportError]
+
+
+# ── Studios ───────────────────────────────────────────────────────────────────
+
+class StudioCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class StudioUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class StudioOut(OrmBase):
+    id: int
+    name: str
+    description: Optional[str] = None
+    createdAt: datetime
+    updatedAt: datetime
+
+
+# ── Card Inventory ────────────────────────────────────────────────────────────
+
+class AddDecksRequest(BaseModel):
+    color: CardColor
+    deckCount: int = Field(gt=0)
+    note: Optional[str] = None
+
+
+class DeckEntryOut(OrmBase):
+    id: int
+    color: CardColor
+    deckCount: int
+    cardCount: int
+    note: Optional[str] = None
+    createdById: Optional[int] = None
+    createdAt: datetime
+    createdBy: Optional[MovementCreatedByOut] = None
+
+
+class CreateShoeRequest(BaseModel):
+    color: CardColor
+
+
+class SendShoeRequest(BaseModel):
+    studioId: int
+
+
+class ShoeOut(OrmBase):
+    id: int
+    color: CardColor
+    status: ShoeStatus
+    studioId: Optional[int] = None
+    createdById: Optional[int] = None
+    sentById: Optional[int] = None
+    createdAt: datetime
+    sentAt: Optional[datetime] = None
+    studio: Optional[StudioOut] = None
+    createdBy: Optional[MovementCreatedByOut] = None
+    sentBy: Optional[MovementCreatedByOut] = None
+
+
+class CardInventorySummary(BaseModel):
+    blackDecks: int
+    redDecks: int
+    blackCards: int
+    redCards: int
+    totalDecks: int
+    totalCards: int
+    shoesInWarehouse: int
+    shoesSentToStudio: int
+    totalShoes: int
+
+
+class DashboardCardStats(BaseModel):
+    inventory: CardInventorySummary
+    recentEntries: List[DeckEntryOut]
 

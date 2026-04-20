@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Item, Movement, MovementLine, SerializedUnit, UnitStatus, User
-from app.schemas import DashboardStats, LowStockItem, MovementCreatedByOut, RecentMovement
+from app.models import CardColor, DeckEntry, Item, Movement, MovementLine, SerializedUnit, Shoe, ShoeStatus, UnitStatus, User
+from app.routers.cards import _build_inventory_summary
+from app.schemas import DashboardCardStats, DashboardStats, LowStockItem, MovementCreatedByOut, RecentMovement
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -77,3 +78,17 @@ def get_stats(
         lowStockItems=low_stock_items,
         recentMovements=recent_movements,
     )
+
+
+@router.get("/card-stats", response_model=DashboardCardStats)
+def get_card_stats(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    inventory = _build_inventory_summary(db)
+    recent_entries = db.query(DeckEntry).order_by(DeckEntry.createdAt.desc()).limit(5).all()
+    return DashboardCardStats(
+        inventory=inventory,
+        recentEntries=recent_entries,
+    )
+

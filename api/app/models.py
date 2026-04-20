@@ -259,3 +259,68 @@ class Notification(Base):
     user = relationship("User")
 
     __table_args__ = (Index("Notification_userId_idx", "userId"),)
+
+
+# ── Casino Card Inventory ──────────────────────────────────────────────────────
+
+class CardColor(str, enum.Enum):
+    BLACK = "BLACK"
+    RED = "RED"
+
+
+class ShoeStatus(str, enum.Enum):
+    IN_WAREHOUSE = "IN_WAREHOUSE"
+    SENT_TO_STUDIO = "SENT_TO_STUDIO"
+
+
+class Studio(Base):
+    __tablename__ = "Studio"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updatedAt = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    shoes = relationship("Shoe", back_populates="studio")
+
+
+class DeckEntry(Base):
+    """Records each batch of decks added to inventory."""
+
+    __tablename__ = "DeckEntry"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    deckCount = Column(Integer, nullable=False)
+    cardCount = Column(Integer, nullable=False)  # deckCount * 52
+    note = Column(Text, nullable=True)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    createdBy = relationship("User")
+
+    __table_args__ = (Index("DeckEntry_color_idx", "color"),)
+
+
+class Shoe(Base):
+    """A shoe assembled from 8 decks of the same color."""
+
+    __tablename__ = "Shoe"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    status = Column(
+        SAEnum(ShoeStatus, name="ShoeStatus", create_type=False),
+        nullable=False,
+        default=ShoeStatus.IN_WAREHOUSE,
+    )
+    studioId = Column(Integer, ForeignKey("Studio.id", ondelete="SET NULL"), nullable=True)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    sentById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sentAt = Column(DateTime, nullable=True)
+
+    studio = relationship("Studio", back_populates="shoes")
+    createdBy = relationship("User", foreign_keys=[createdById])
+    sentBy = relationship("User", foreign_keys=[sentById])

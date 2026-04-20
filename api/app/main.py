@@ -5,6 +5,7 @@ from app.auth import decode_token
 from app.routers import (
     audit,
     auth,
+    cards,
     dashboard,
     import_data,
     items,
@@ -13,6 +14,7 @@ from app.routers import (
     notifications,
     reports,
     scan,
+    studios,
     units,
     users,
     warehouses,
@@ -43,6 +45,8 @@ _routers = [
     audit.router,
     reports.router,
     notifications.router,
+    studios.router,
+    cards.router,
 ]
 
 for router in _routers:

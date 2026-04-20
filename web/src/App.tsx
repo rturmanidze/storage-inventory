@@ -18,6 +18,9 @@ import Import from './pages/Import'
 import AuditLog from './pages/AuditLog'
 import Reports from './pages/Reports'
 import UnitHistory from './pages/UnitHistory'
+import Studios from './pages/Studios'
+import Decks from './pages/Decks'
+import Shoes from './pages/Shoes'
 
 function AppWithProviders() {
   return (
@@ -41,6 +44,9 @@ function AppWithProviders() {
               <Route path="/import" element={<Import />} />
               <Route path="/audit" element={<AuditLog />} />
               <Route path="/reports" element={<Reports />} />
+              <Route path="/studios" element={<Studios />} />
+              <Route path="/decks" element={<Decks />} />
+              <Route path="/shoes" element={<Shoes />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -59,5 +65,3 @@ export default function App() {
     </BrowserRouter>
   )
 }
-
-
