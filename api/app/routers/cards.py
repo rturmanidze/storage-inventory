@@ -49,143 +49,37 @@ FORECAST_LOOKBACK_DAYS = 30
 def _get_available_decks(db: Session, color: CardColor) -> int:
     """Return current available deck count for a given color.
 
-    Available decks = total added via DeckEntry
-                    - decks currently held by active shoes
-                    - decks permanently destroyed (cards destroyed workflow)
+    Available decks = sum of decksRemaining across all unlocked, non-archived
+    containers of the matching color.
 
-    Deck accounting per status:
-    - IN_WAREHOUSE:            shoe holds 8 decks  (pool -8)
-    - SENT_TO_STUDIO:          shoe holds 8 decks  (pool -8)
-    - RETURNED:                shoe holds 8 used decks (pool -8); cards await
-                               destruction — NOT released back to free pool
-    - REFILLED:                shoe holds 8 new decks  (pool -8)
-    - CARDS_DESTROYED:         cards gone permanently (pool -8, tracked via destroyedAt)
-    - EMPTY_SHOE_IN_WAREHOUSE: cards already destroyed (pool -8, destroyedAt set)
-    - PHYSICALLY_DAMAGED:      destroyedAt IS NOT NULL → pool -8 (cards accounted
-                               for via destroyedAt, set either at destroy-cards or
-                               at report-physical-damage when source was RETURNED)
-    - PHYSICALLY_DESTROYED:    same logic as PHYSICALLY_DAMAGED
-    - DESTROYED (legacy):      treated as CARDS_DESTROYED (destroyedAt IS NOT NULL)
-
-    Formula:
-        available = total_added
-                  - (IN_WAREHOUSE + SENT_TO_STUDIO + RETURNED + REFILLED shoes) * 8
-                  - (shoes where destroyedAt IS NOT NULL) * 8
-                  - (extra_refill_destructions) * 8
-
-    extra_refill_destructions corrects for refilled shoes that were subsequently
-    destroyed a second time.  When a REFILLED shoe is destroyed its second time:
-      - It exits holding_shoes  (-1 from holding → formula gains +8)
-      - destroyedAt was already set from the first cycle → cards_destroyed_shoes
-        count stays the same (not +1)
-      - Net: available incorrectly increases by 8 without this correction term.
-    Affected shoes: refilledAt IS NOT NULL AND destroyedAt IS NOT NULL AND
-                    status NOT IN holding statuses.
-    Note: shoes currently in a holding state (REFILLED) are excluded because
-    they are already double-counted via holding + cards_destroyed (correct -16).
+    Locked containers are intentionally excluded — they cannot be consumed
+    until manually unlocked by an admin.  This ensures that destroying cards,
+    returning shoes, or any other lifecycle event never inflates the count:
+    only consuming from a container (shoe creation / refill) reduces it.
     """
-    total_added = (
-        db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
-        .filter(DeckEntry.color == color)
-        .scalar()
-        or 0
-    )
-    # Shoes currently holding their 8 decks (including refilled shoes with new cards,
-    # and returned shoes whose used cards have not yet been destroyed)
-    holding_shoes = (
-        db.query(func.count(Shoe.id))
+    return int(
+        db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
         .filter(
-            Shoe.color == color,
-            Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE,
-                ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED,
-                ShoeStatus.REFILLED,
-            ]),
+            Container.color == color,
+            Container.archivedAt.is_(None),
+            Container.isLocked.is_(False),
         )
         .scalar()
         or 0
     )
-    # Shoes whose cards were permanently destroyed (set when destroy-cards action runs)
-    cards_destroyed_shoes = (
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.color == color,
-            Shoe.destroyedAt.isnot(None),
-        )
-        .scalar()
-        or 0
-    )
-    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
-    # destroyedAt was already set from the first cycle so cards_destroyed_shoes
-    # doesn't increment again, but the shoe does exit holding_shoes — causing an
-    # incorrect +8 in available without this term.
-    extra_refill_destructions = (
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.color == color,
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE,
-                ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED,
-                ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar()
-        or 0
-    )
-    return int(total_added) - (
-        int(holding_shoes) + int(cards_destroyed_shoes) + int(extra_refill_destructions)
-    ) * DECKS_PER_SHOE
 
 def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
-    """Sum DeckEntry.deckCount filtered by material, minus decks held/destroyed by shoes with that material."""
-    total_added = int(
-        db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
-        .filter(DeckEntry.material == material)
-        .scalar()
-        or 0
-    )
-    holding_shoes = int(
-        db.query(func.count(Shoe.id))
+    """Return available deck count for a given material across all colors."""
+    return int(
+        db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
         .filter(
-            Shoe.material == material,
-            Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE,
-                ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED,
-                ShoeStatus.REFILLED,
-            ]),
+            Container.material == material,
+            Container.archivedAt.is_(None),
+            Container.isLocked.is_(False),
         )
         .scalar()
         or 0
     )
-    cards_destroyed_shoes = int(
-        db.query(func.count(Shoe.id))
-        .filter(Shoe.material == material, Shoe.destroyedAt.isnot(None))
-        .scalar()
-        or 0
-    )
-    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
-    extra_refill_destructions = int(
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.material == material,
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE,
-                ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED,
-                ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar()
-        or 0
-    )
-    return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
 def _build_inventory_summary(db: Session) -> CardInventorySummary:

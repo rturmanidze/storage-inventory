@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
@@ -70,63 +71,86 @@ def consume_decks_fifo(
     shoe_id: Optional[int],
     request: Optional[Request] = None,
 ) -> Optional[Container]:
-    """Consume *decks_needed* decks from the oldest non-empty container of *color* (and *material* if given).
+    """Consume *decks_needed* decks from unlocked containers in FIFO order.
 
-    Returns the container that was consumed, or ``None`` when no matching
-    container is available (caller should fall back to legacy DeckEntry pool).
+    Splits consumption across multiple containers when necessary (e.g. container A
+    has 6 decks and 8 are needed — takes 6 from A then 2 from B).
+
+    Only unlocked (``isLocked=False``), non-archived containers are used.
+    Containers are NEVER automatically locked by this function; locking is
+    exclusively a manual admin action.
+
+    Returns the first container that was consumed from, or ``None`` when there
+    are not enough decks in unlocked containers to satisfy the request.
 
     Side-effects (all flushed but NOT committed):
-    - Reduces ``container.decksRemaining`` by *decks_needed*.
-    - Sets ``container.isLocked = True`` on first consumption (if not already).
-    - Archives the container (``archivedAt``) and unlocks it when fully empty.
-    - Appends a DECK_CONSUMED ContainerEvent (and LOCKED / ARCHIVED as needed).
+    - Reduces ``container.decksRemaining`` across one or more containers.
+    - Archives each container (``archivedAt``) when it becomes fully empty.
+    - Appends DECK_CONSUMED and ARCHIVED ContainerEvents as appropriate.
     """
     now = datetime.utcnow()
 
-    # FIFO: oldest created, non-archived container with enough remaining decks
-    q = db.query(Container).filter(
+    # Pre-check: is there enough total capacity across all unlocked containers?
+    q_total = db.query(func.coalesce(func.sum(Container.decksRemaining), 0)).filter(
         Container.color == color,
         Container.archivedAt.is_(None),
-        Container.decksRemaining >= decks_needed,
+        Container.isLocked.is_(False),
+        Container.decksRemaining > 0,
     )
     if material is not None:
-        q = q.filter(Container.material == material)
-    container: Optional[Container] = (
-        q.order_by(Container.createdAt.asc())
-        .with_for_update(skip_locked=True)
-        .first()
-    )
+        q_total = q_total.filter(Container.material == material)
+    total_available = int(q_total.scalar() or 0)
 
-    if container is None:
+    if total_available < decks_needed:
         return None
 
-    # Lock on first use
-    if not container.isLocked:
-        container.isLocked = True
-        container.lockedAt = now
-        _add_event(db, container, ContainerEventType.LOCKED, user_id=user_id,
-                   note="Container locked on first shoe creation")
+    # Consume in FIFO order across as many containers as needed
+    remaining = decks_needed
+    first_container: Optional[Container] = None
 
-    container.decksRemaining -= decks_needed
+    while remaining > 0:
+        q = db.query(Container).filter(
+            Container.color == color,
+            Container.archivedAt.is_(None),
+            Container.isLocked.is_(False),
+            Container.decksRemaining > 0,
+        )
+        if material is not None:
+            q = q.filter(Container.material == material)
+        container: Optional[Container] = (
+            q.order_by(Container.createdAt.asc())
+            .with_for_update(skip_locked=True)
+            .first()
+        )
 
-    _add_event(
-        db, container, ContainerEventType.DECK_CONSUMED,
-        user_id=user_id,
-        shoe_id=shoe_id,
-        decks_consumed=decks_needed,
-        note=f"Consumed {decks_needed} decks for shoe #{shoe_id}",
-    )
+        if container is None:
+            # Race condition: another transaction consumed decks between pre-check and loop
+            return None
 
-    # Archive when empty
-    if container.decksRemaining == 0:
-        container.archivedAt = now
-        container.isLocked = False
-        container.unlockedAt = now
-        _add_event(db, container, ContainerEventType.ARCHIVED, user_id=user_id,
-                   note="Container fully depleted — archived")
+        if first_container is None:
+            first_container = container
 
-    db.flush()
-    return container
+        take = min(remaining, container.decksRemaining)
+        remaining -= take
+        container.decksRemaining -= take
+
+        _add_event(
+            db, container, ContainerEventType.DECK_CONSUMED,
+            user_id=user_id,
+            shoe_id=shoe_id,
+            decks_consumed=take,
+            note=f"Consumed {take} decks for shoe #{shoe_id} ({decks_needed - remaining}/{decks_needed} total)",
+        )
+
+        # Archive when fully depleted
+        if container.decksRemaining == 0:
+            container.archivedAt = now
+            _add_event(db, container, ContainerEventType.ARCHIVED, user_id=user_id,
+                       note="Container fully depleted — archived")
+
+        db.flush()
+
+    return first_container
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
