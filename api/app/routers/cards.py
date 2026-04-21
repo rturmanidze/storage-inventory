@@ -71,6 +71,18 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
         available = total_added
                   - (IN_WAREHOUSE + SENT_TO_STUDIO + RETURNED + REFILLED shoes) * 8
                   - (shoes where destroyedAt IS NOT NULL) * 8
+                  - (extra_refill_destructions) * 8
+
+    extra_refill_destructions corrects for refilled shoes that were subsequently
+    destroyed a second time.  When a REFILLED shoe is destroyed its second time:
+      - It exits holding_shoes  (-1 from holding → formula gains +8)
+      - destroyedAt was already set from the first cycle → cards_destroyed_shoes
+        count stays the same (not +1)
+      - Net: available incorrectly increases by 8 without this correction term.
+    Affected shoes: refilledAt IS NOT NULL AND destroyedAt IS NOT NULL AND
+                    status NOT IN holding statuses.
+    Note: shoes currently in a holding state (REFILLED) are excluded because
+    they are already double-counted via holding + cards_destroyed (correct -16).
     """
     total_added = (
         db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
@@ -104,7 +116,29 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
         .scalar()
         or 0
     )
-    return int(total_added) - (int(holding_shoes) + int(cards_destroyed_shoes)) * DECKS_PER_SHOE
+    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
+    # destroyedAt was already set from the first cycle so cards_destroyed_shoes
+    # doesn't increment again, but the shoe does exit holding_shoes — causing an
+    # incorrect +8 in available without this term.
+    extra_refill_destructions = (
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar()
+        or 0
+    )
+    return int(total_added) - (
+        int(holding_shoes) + int(cards_destroyed_shoes) + int(extra_refill_destructions)
+    ) * DECKS_PER_SHOE
 
 def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
     """Sum DeckEntry.deckCount filtered by material, minus decks held/destroyed by shoes with that material."""
@@ -134,7 +168,24 @@ def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
         .scalar()
         or 0
     )
-    return total_added - (holding_shoes + cards_destroyed_shoes) * DECKS_PER_SHOE
+    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
+    extra_refill_destructions = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.material == material,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar()
+        or 0
+    )
+    return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
 def _build_inventory_summary(db: Session) -> CardInventorySummary:
@@ -168,7 +219,23 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
             .filter(Shoe.color == color, Shoe.material == material, Shoe.destroyedAt.isnot(None))
             .scalar() or 0
         )
-        return total - (h + d) * DECKS_PER_SHOE
+        # Extra correction for refilled shoes destroyed in a second (or later) cycle.
+        extra_r = int(
+            db.query(func.count(Shoe.id))
+            .filter(
+                Shoe.color == color, Shoe.material == material,
+                Shoe.refilledAt.isnot(None),
+                Shoe.destroyedAt.isnot(None),
+                ~Shoe.status.in_([
+                    ShoeStatus.IN_WAREHOUSE,
+                    ShoeStatus.SENT_TO_STUDIO,
+                    ShoeStatus.RETURNED,
+                    ShoeStatus.REFILLED,
+                ]),
+            )
+            .scalar() or 0
+        )
+        return total - (h + d + extra_r) * DECKS_PER_SHOE
 
     shoes_in_warehouse = int(
         db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.IN_WAREHOUSE).scalar() or 0
@@ -518,7 +585,25 @@ def _get_available_decks_by_material(db: Session, color: CardColor, material: Ca
         .scalar()
         or 0
     )
-    return total_added - (holding_shoes + cards_destroyed_shoes) * DECKS_PER_SHOE
+    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
+    extra_refill_destructions = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.material == material,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar()
+        or 0
+    )
+    return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
 @router.post("/shoes", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)

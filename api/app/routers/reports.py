@@ -188,7 +188,10 @@ def _get_available_decks_report(db: Session, color: CardColor) -> int:
     """Mirrors the calculation in cards.py without importing it to avoid circular deps.
 
     Available = total_added - holding_shoes*8 - cards_destroyed_shoes*8
+                            - extra_refill_destructions*8
     Holding = IN_WAREHOUSE + SENT_TO_STUDIO + RETURNED + REFILLED
+    extra_refill_destructions = refilled shoes whose second-cycle cards were also
+    destroyed (refilledAt IS NOT NULL AND destroyedAt IS NOT NULL AND not in holding).
     See cards.py _get_available_decks for full accounting explanation.
     """
     total_added = (
@@ -220,7 +223,25 @@ def _get_available_decks_report(db: Session, color: CardColor) -> int:
         .scalar()
         or 0
     )
-    return int(total_added) - (int(holding_shoes) + int(cards_destroyed_shoes)) * DECKS_PER_SHOE
+    extra_refill_destructions = (
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == color,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar()
+        or 0
+    )
+    return int(total_added) - (
+        int(holding_shoes) + int(cards_destroyed_shoes) + int(extra_refill_destructions)
+    ) * DECKS_PER_SHOE
 
 
 def _get_available_decks_by_material_report(db: Session, material: CardMaterial) -> int:
@@ -248,7 +269,23 @@ def _get_available_decks_by_material_report(db: Session, material: CardMaterial)
         .filter(Shoe.material == material, Shoe.destroyedAt.isnot(None))
         .scalar() or 0
     )
-    return total_added - (holding_shoes + cards_destroyed_shoes) * DECKS_PER_SHOE
+    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
+    extra_refill_destructions = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.material == material,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar() or 0
+    )
+    return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
 @router.get("/cards/summary", response_model=CardReportSummary)
