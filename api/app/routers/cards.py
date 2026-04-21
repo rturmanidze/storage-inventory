@@ -54,20 +54,22 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
                     - decks permanently destroyed (cards destroyed workflow)
 
     Deck accounting per status:
-    - IN_WAREHOUSE:           shoe holds 8 decks  (pool -8)
-    - SENT_TO_STUDIO:         shoe holds 8 decks  (pool -8)
-    - RETURNED:               decks back in pool  (no impact)
-    - CARDS_DESTROYED:        cards gone permanently (pool -8, tracked via destroyedAt)
+    - IN_WAREHOUSE:            shoe holds 8 decks  (pool -8)
+    - SENT_TO_STUDIO:          shoe holds 8 decks  (pool -8)
+    - RETURNED:                shoe holds 8 used decks (pool -8); cards await
+                               destruction — NOT released back to free pool
+    - REFILLED:                shoe holds 8 new decks  (pool -8)
+    - CARDS_DESTROYED:         cards gone permanently (pool -8, tracked via destroyedAt)
     - EMPTY_SHOE_IN_WAREHOUSE: cards already destroyed (pool -8, destroyedAt set)
-    - PHYSICALLY_DAMAGED:     depends on prior path:
-        from RETURNED           → decks in pool (destroyedAt is NULL)
-        from EMPTY_SHOE         → cards destroyed (destroyedAt is NOT NULL, pool -8)
-    - PHYSICALLY_DESTROYED:   same logic as PHYSICALLY_DAMAGED
-    - DESTROYED (legacy):     treated as CARDS_DESTROYED (destroyedAt IS NOT NULL)
+    - PHYSICALLY_DAMAGED:      destroyedAt IS NOT NULL → pool -8 (cards accounted
+                               for via destroyedAt, set either at destroy-cards or
+                               at report-physical-damage when source was RETURNED)
+    - PHYSICALLY_DESTROYED:    same logic as PHYSICALLY_DAMAGED
+    - DESTROYED (legacy):      treated as CARDS_DESTROYED (destroyedAt IS NOT NULL)
 
     Formula:
         available = total_added
-                  - (IN_WAREHOUSE + SENT_TO_STUDIO shoes) * 8
+                  - (IN_WAREHOUSE + SENT_TO_STUDIO + RETURNED + REFILLED shoes) * 8
                   - (shoes where destroyedAt IS NOT NULL) * 8
     """
     total_added = (
@@ -76,12 +78,18 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
         .scalar()
         or 0
     )
-    # Shoes currently holding their 8 decks (including refilled shoes with new cards)
+    # Shoes currently holding their 8 decks (including refilled shoes with new cards,
+    # and returned shoes whose used cards have not yet been destroyed)
     holding_shoes = (
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.color == color,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+            Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
         )
         .scalar()
         or 0
@@ -110,7 +118,12 @@ def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.material == material,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+            Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
         )
         .scalar()
         or 0
@@ -141,7 +154,12 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
             db.query(func.count(Shoe.id))
             .filter(
                 Shoe.color == color, Shoe.material == material,
-                Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+                Shoe.status.in_([
+                    ShoeStatus.IN_WAREHOUSE,
+                    ShoeStatus.SENT_TO_STUDIO,
+                    ShoeStatus.RETURNED,
+                    ShoeStatus.REFILLED,
+                ]),
             )
             .scalar() or 0
         )
@@ -290,14 +308,17 @@ def _auto_create_containers(
     note: Optional[str],
     user_id: int,
     request: Request,
-) -> list:
+) -> tuple:
     """Split *deck_count* into containers of CONTAINER_CAPACITY and persist them.
 
     Creates a single DeckEntry for the full *deck_count* (so Deck Receiving
     History shows one row per user action, not one row per container split).
     Then creates as many Container records as needed (max CONTAINER_CAPACITY
-    decks each).  Returns the single DeckEntry in a list to satisfy the
-    caller's expected return type.
+    decks each).
+
+    Returns a ``(entries, containers_created)`` tuple where *entries* is the
+    list containing the single DeckEntry and *containers_created* is the actual
+    number of Container rows flushed.
     """
     from app.models import ContainerEvent, ContainerEventType  # local import to avoid circular
 
@@ -334,14 +355,14 @@ def _auto_create_containers(
 
     # Split into containers (max CONTAINER_CAPACITY each)
     remaining = deck_count
-    idx = 1
+    containers_created = 0
     while remaining > 0:
         batch = min(remaining, CONTAINER_CAPACITY)
         remaining -= batch
+        containers_created += 1
 
         ts = now.strftime("%Y%m%d%H%M%S")
-        code = f"AUTO-{color.value[:1]}-{material.value[:2]}-{ts}-{idx:03d}"
-        idx += 1
+        code = f"AUTO-{color.value[:1]}-{material.value[:2]}-{ts}-{containers_created:03d}"
 
         container = Container(
             code=code,
@@ -380,7 +401,7 @@ def _auto_create_containers(
             request=request,
         )
 
-    return [entry]
+    return [entry], containers_created
 
 
 @router.post("/decks", response_model=AddDecksResponse, status_code=status.HTTP_201_CREATED)
@@ -391,7 +412,7 @@ def add_decks(
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
     """Add decks to inventory and automatically split them into containers (max 200 per container)."""
-    entries = _auto_create_containers(
+    entries, containers_created = _auto_create_containers(
         db,
         color=body.color,
         material=body.material,
@@ -405,7 +426,7 @@ def add_decks(
         db.refresh(e)
     return AddDecksResponse(
         entries=entries,
-        containersCreated=len(entries),
+        containersCreated=containers_created,
         totalDecks=body.deckCount,
         color=body.color,
         material=body.material,
@@ -481,7 +502,12 @@ def _get_available_decks_by_material(db: Session, color: CardColor, material: Ca
         .filter(
             Shoe.color == color,
             Shoe.material == material,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+            Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
         )
         .scalar()
         or 0
@@ -680,7 +706,8 @@ def return_shoe_from_studio(
         detail={
             "studioId": shoe.studioId,
             "color": shoe.color.value,
-            "decksRestored": DECKS_PER_SHOE,
+            "decksRestored": 0,
+            "note": "Shoe returned; decks remain held by shoe (not restored to free pool)",
         },
         request=request,
     )
@@ -1015,9 +1042,12 @@ def report_physical_damage(
     (broken, cracked, unusable container).  This is NOT for card depletion or
     routine usage — use the destroy-cards endpoint for that.
 
-    Cards must be already accounted for before reporting physical damage:
-    - RETURNED: cards were returned to the deck pool (via return-from-studio).
-    - EMPTY_SHOE_IN_WAREHOUSE: cards were destroyed (via destroy endpoint).
+    Cards must already be accounted for before reporting physical damage:
+    - RETURNED: shoe has used cards that are considered permanently consumed.
+      ``destroyedAt`` is set here so the deck pool correctly keeps those 8
+      decks deducted (same effect as card destruction).
+    - EMPTY_SHOE_IN_WAREHOUSE: cards were already destroyed via the destroy
+      endpoint; ``destroyedAt`` is already set.
 
     After reporting, an admin/manager must confirm physical destruction via
     POST /shoes/{id}/confirm-physical-destroy.
@@ -1040,10 +1070,20 @@ def report_physical_damage(
             ),
         )
 
+    now = datetime.utcnow()
+    prior_status = shoe.status
+
     shoe.status = ShoeStatus.PHYSICALLY_DAMAGED
     shoe.physicalDamageReason = body.reason
-    shoe.physicalDamageAt = datetime.utcnow()
+    shoe.physicalDamageAt = now
     shoe.physicalDamageById = current_user.id
+
+    # When coming from RETURNED state the shoe still holds its 8 used decks.
+    # Set destroyedAt so the pool formula keeps those 8 decks permanently
+    # deducted (same accounting as an explicit card-destruction event).
+    if prior_status == ShoeStatus.RETURNED and shoe.destroyedAt is None:
+        shoe.destroyedAt = now
+        shoe.destroyedById = current_user.id
 
     log_action(
         db,
@@ -1055,6 +1095,8 @@ def report_physical_damage(
             "color": shoe.color.value,
             "shoeNumber": shoe.shoeNumber,
             "reason": body.reason,
+            "priorStatus": prior_status.value,
+            "decksAccountedFor": prior_status == ShoeStatus.RETURNED,
         },
         request=request,
     )

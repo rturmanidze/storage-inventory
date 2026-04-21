@@ -188,6 +188,7 @@ def _get_available_decks_report(db: Session, color: CardColor) -> int:
     """Mirrors the calculation in cards.py without importing it to avoid circular deps.
 
     Available = total_added - holding_shoes*8 - cards_destroyed_shoes*8
+    Holding = IN_WAREHOUSE + SENT_TO_STUDIO + RETURNED + REFILLED
     See cards.py _get_available_decks for full accounting explanation.
     """
     total_added = (
@@ -200,7 +201,12 @@ def _get_available_decks_report(db: Session, color: CardColor) -> int:
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.color == color,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+            Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
         )
         .scalar()
         or 0
@@ -228,7 +234,12 @@ def _get_available_decks_by_material_report(db: Session, material: CardMaterial)
         db.query(func.count(Shoe.id))
         .filter(
             Shoe.material == material,
-            Shoe.status.in_([ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO, ShoeStatus.REFILLED]),
+            Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
         )
         .scalar() or 0
     )

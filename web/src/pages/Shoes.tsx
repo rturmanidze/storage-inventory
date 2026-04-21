@@ -174,7 +174,7 @@ export default function Shoes() {
 
   const returnMutation = useMutation({
     mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/return-from-studio`),
-    onSuccess: () => { invalidate(); toast.success('Shoe returned — 8 decks restored to inventory'); setReturnModalShoe(null) },
+    onSuccess: () => { invalidate(); toast.success('Shoe returned to warehouse'); setReturnModalShoe(null) },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to return shoe'),
   })
 
@@ -379,7 +379,6 @@ export default function Shoes() {
                   <tr key={shoe.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-mono font-semibold text-gray-700">
                       Shoe #{shoe.shoeNumber}
-                      <span className="ml-1 text-2xs text-gray-300">id:{shoe.id}</span>
                     </td>
                     <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
                     <td className="px-4 py-3"><MaterialBadge material={shoe.material} /></td>
@@ -662,7 +661,8 @@ export default function Shoes() {
                 )}
               </div>
               <div className="bg-teal-50 rounded-lg p-3 text-xs text-teal-700">
-                Returning this shoe will restore <strong>8 decks</strong> ({(8 * 52).toLocaleString()} cards) to the available inventory.
+                Returning this shoe will change its status to <strong>Returned</strong>.
+                The shoe's used cards remain held and will need to be destroyed.
               </div>
               <div className="flex gap-3 pt-1">
                 <button className="btn-ghost flex-1" onClick={() => setReturnModalShoe(null)}>Cancel</button>
