@@ -45,6 +45,7 @@ def get_warehouse(
 
 
 @router.put("/{warehouse_id}", response_model=WarehouseOut)
+@router.patch("/{warehouse_id}", response_model=WarehouseOut)
 def update_warehouse(
     warehouse_id: int,
     body: WarehouseUpdate,

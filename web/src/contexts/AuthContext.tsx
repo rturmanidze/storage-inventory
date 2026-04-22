@@ -32,8 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .get<User>('/auth/me')
       .then(res => setUser(res.data))
       .catch(() => {
-        localStorage.removeItem('token')
-        setToken(null)
+        // Guard against clearing a token that was freshly set by a concurrent login.
+        // If the stored token has changed since we started, a new login already
+        // succeeded – leave the new token and user state intact.
+        if (localStorage.getItem('token') === storedToken) {
+          localStorage.removeItem('token')
+          setToken(null)
+          setUser(null)
+        }
       })
       .finally(() => setIsLoading(false))
   }, [])
@@ -47,6 +53,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('token', access_token)
     setToken(access_token)
     setUser(userData)
+    // End the initial-load state so ProtectedRoute won't show the spinner
+    // if the background /auth/me check is still in-flight.
+    setIsLoading(false)
   }
 
   function logout() {

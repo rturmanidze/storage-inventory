@@ -109,17 +109,20 @@ export default function ItemDetail() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <button className="btn-secondary btn-sm" onClick={() => navigate('/items')}>
-          ← Back
+        <button className="btn-ghost btn-icon" onClick={() => navigate('/items')}>
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
-        <h1 className="text-2xl font-bold text-gray-900">{item.name}</h1>
+        <div>
+          <h1 className="page-title">{item.name}</h1>
+          <p className="page-subtitle">SKU: {item.sku}</p>
+        </div>
       </div>
 
       {/* Edit form */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold mb-4">Item Details</h2>
+        <h2 className="section-title mb-4">Item Details</h2>
         <form onSubmit={handleSubmit(d => updateMutation.mutate(d))} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -164,7 +167,7 @@ export default function ItemDetail() {
       {/* Barcodes */}
       <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Barcodes</h2>
+          <h2 className="section-title">Barcodes</h2>
           <button
             className="btn-secondary btn-sm"
             onClick={() => setAddingBarcode(true)}
@@ -212,7 +215,7 @@ export default function ItemDetail() {
         {barcodes.length === 0 ? (
           <p className="text-sm text-gray-500">No barcodes assigned to this item.</p>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="min-w-full divide-y divide-gray-100">
             <thead>
               <tr>
                 <th className="table-header">Value</th>
@@ -220,9 +223,9 @@ export default function ItemDetail() {
                 <th className="table-header">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-50">
               {barcodes.map(bc => (
-                <tr key={bc.id} className="hover:bg-gray-50">
+                <tr key={bc.id} className="hover:bg-surface-secondary transition-colors">
                   <td className="table-cell font-mono text-sm">{bc.value}</td>
                   <td className="table-cell hidden sm:table-cell text-gray-500">
                     {bc.symbology ?? '—'}

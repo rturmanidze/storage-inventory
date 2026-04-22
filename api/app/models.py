@@ -2,6 +2,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Integer,
     String,
@@ -30,6 +31,9 @@ class UnitStatus(str, enum.Enum):
     ISSUED = "ISSUED"
     QUARANTINED = "QUARANTINED"
     SCRAPPED = "SCRAPPED"
+    DAMAGED = "DAMAGED"
+    EXPIRED = "EXPIRED"
+    DESTROYED = "DESTROYED"
 
 
 class MovementType(str, enum.Enum):
@@ -64,7 +68,9 @@ class Warehouse(Base):
     __tablename__ = "Warehouse"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String, unique=True, nullable=False)
     name = Column(String, unique=True, nullable=False)
+    address = Column(Text, nullable=True)
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     updatedAt = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -201,3 +207,247 @@ class MovementLine(Base):
         back_populates="toLines",
     )
     issuedTo = relationship("IssuedTo", back_populates="movementLines")
+
+
+class AuditLog(Base):
+    __tablename__ = "AuditLog"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String, nullable=False)
+    resourceType = Column(String, nullable=True)
+    resourceId = Column(String, nullable=True)
+    detail = Column(Text, nullable=True)
+    ipAddress = Column(String, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[userId])
+
+    __table_args__ = (
+        Index("AuditLog_userId_idx", "userId"),
+        Index("AuditLog_createdAt_idx", "createdAt"),
+        Index("AuditLog_action_idx", "action"),
+    )
+
+
+class DestructionRecord(Base):
+    __tablename__ = "DestructionRecord"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    unitId = Column(Integer, ForeignKey("SerializedUnit.id"), nullable=False)
+    destroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    reason = Column(Text, nullable=False)
+    destroyedAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    unit = relationship("SerializedUnit")
+    destroyedBy = relationship("User")
+
+    __table_args__ = (Index("DestructionRecord_unitId_idx", "unitId"),)
+
+
+class Notification(Base):
+    __tablename__ = "Notification"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="CASCADE"), nullable=False)
+    type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    isRead = Column(Boolean, nullable=False, default=False)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User")
+
+    __table_args__ = (Index("Notification_userId_idx", "userId"),)
+
+
+# ── Casino Card Inventory ──────────────────────────────────────────────────────
+
+class CardColor(str, enum.Enum):
+    BLACK = "BLACK"
+    RED = "RED"
+
+
+class CardMaterial(str, enum.Enum):
+    PLASTIC = "PLASTIC"
+    PAPER = "PAPER"
+
+
+class ContainerEventType(str, enum.Enum):
+    CREATED = "CREATED"
+    LOCKED = "LOCKED"
+    UNLOCKED = "UNLOCKED"
+    DECK_CONSUMED = "DECK_CONSUMED"
+    ARCHIVED = "ARCHIVED"
+
+
+class ShoeStatus(str, enum.Enum):
+    IN_WAREHOUSE = "IN_WAREHOUSE"
+    SENT_TO_STUDIO = "SENT_TO_STUDIO"
+    RETURNED = "RETURNED"
+    # Cards destroyed, physical shoe container remains in warehouse
+    CARDS_DESTROYED = "CARDS_DESTROYED"
+    # Shoe container recovered after card destruction — no cards, no deck increase
+    EMPTY_SHOE_IN_WAREHOUSE = "EMPTY_SHOE_IN_WAREHOUSE"
+    # Shoe reported as physically damaged — awaiting confirmation before final destroy
+    PHYSICALLY_DAMAGED = "PHYSICALLY_DAMAGED"
+    # Physical shoe container confirmed destroyed — shoe is fully removed from service
+    PHYSICALLY_DESTROYED = "PHYSICALLY_DESTROYED"
+    # Empty shoe container refilled with new decks — ready for studio deployment
+    REFILLED = "REFILLED"
+    # Legacy value kept for DB enum-type compat; treated as CARDS_DESTROYED in all logic
+    DESTROYED = "DESTROYED"
+
+
+class Studio(Base):
+    __tablename__ = "Studio"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    description = Column(Text, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updatedAt = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    shoes = relationship("Shoe", back_populates="studio")
+
+
+class DeckEntry(Base):
+    """Records each batch of decks added to inventory."""
+
+    __tablename__ = "DeckEntry"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(
+        SAEnum(CardMaterial, name="CardMaterial", create_type=False),
+        nullable=True,
+    )
+    deckCount = Column(Integer, nullable=False)
+    cardCount = Column(Integer, nullable=False)  # deckCount * 52
+    note = Column(Text, nullable=True)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    createdBy = relationship("User")
+
+    __table_args__ = (Index("DeckEntry_color_idx", "color"),)
+
+
+class Container(Base):
+    """A physical deck container holding exactly CONTAINER_CAPACITY decks.
+
+    Containers are the sole storage mechanism for unshod decks.
+    Shoe creation consumes from the oldest non-empty container first (FIFO).
+    """
+
+    __tablename__ = "Container"
+
+    CAPACITY = 200
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String, unique=True, nullable=False)  # e.g. CONTAINER-R01
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(
+        SAEnum(CardMaterial, name="CardMaterial", create_type=False),
+        nullable=False,
+    )
+    decksRemaining = Column(Integer, nullable=False, default=CAPACITY)
+    isLocked = Column(Boolean, nullable=False, default=False)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    lockedAt = Column(DateTime, nullable=True)
+    unlockedAt = Column(DateTime, nullable=True)
+    archivedAt = Column(DateTime, nullable=True)  # set when fully depleted
+
+    createdBy = relationship("User", foreign_keys=[createdById])
+    events = relationship("ContainerEvent", back_populates="container", order_by="ContainerEvent.createdAt")
+    shoes = relationship("Shoe", back_populates="container")
+
+    __table_args__ = (
+        Index("Container_color_idx", "color"),
+        Index("Container_archivedAt_idx", "archivedAt"),
+    )
+
+
+class ContainerEvent(Base):
+    """Audit trail for every significant event on a Container."""
+
+    __tablename__ = "ContainerEvent"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    containerId = Column(Integer, ForeignKey("Container.id", ondelete="CASCADE"), nullable=False)
+    eventType = Column(
+        SAEnum(ContainerEventType, name="ContainerEventType", create_type=False),
+        nullable=False,
+    )
+    decksConsumed = Column(Integer, nullable=True)  # set for DECK_CONSUMED events
+    shoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    note = Column(Text, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    container = relationship("Container", back_populates="events")
+    shoe = relationship("Shoe", foreign_keys=[shoeId])
+    user = relationship("User", foreign_keys=[userId])
+
+
+class Shoe(Base):
+    """A shoe assembled from 8 decks of the same color.
+
+    shoeNumber is a human-readable display identifier that can be reused after
+    a shoe is destroyed (via the Replace Shoe workflow).  It is separate from
+    the internal primary key ``id`` which is globally unique forever.
+    """
+
+    __tablename__ = "Shoe"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shoeNumber = Column(String, nullable=False, default="0")
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=True)
+    status = Column(
+        SAEnum(ShoeStatus, name="ShoeStatus", create_type=False),
+        nullable=False,
+        default=ShoeStatus.IN_WAREHOUSE,
+    )
+    studioId = Column(Integer, ForeignKey("Studio.id", ondelete="SET NULL"), nullable=True)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    sentById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    returnedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    destroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    sentAt = Column(DateTime, nullable=True)
+    returnedAt = Column(DateTime, nullable=True)
+    destroyedAt = Column(DateTime, nullable=True)
+    destroyReason = Column(Text, nullable=True)
+
+    # Shoe recovery from CARDS_DESTROYED → EMPTY_SHOE_IN_WAREHOUSE (one-time only)
+    recoveredAt = Column(DateTime, nullable=True)
+    recoveredById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
+    # Physical damage report (RETURNED / EMPTY_SHOE_IN_WAREHOUSE → PHYSICALLY_DAMAGED)
+    physicalDamageReason = Column(Text, nullable=True)
+    physicalDamageAt = Column(DateTime, nullable=True)
+    physicalDamageById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
+    # Physical destruction confirmation (PHYSICALLY_DAMAGED → PHYSICALLY_DESTROYED)
+    physicallyDestroyedAt = Column(DateTime, nullable=True)
+    physicallyDestroyedById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
+    # Shoe refill (EMPTY_SHOE_IN_WAREHOUSE → REFILLED)
+    refilledAt = Column(DateTime, nullable=True)
+    refilledById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+
+    # Container from which this shoe's decks were sourced (FIFO consumption)
+    containerId = Column(Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True)
+
+    studio = relationship("Studio", back_populates="shoes")
+    createdBy = relationship("User", foreign_keys=[createdById])
+    sentBy = relationship("User", foreign_keys=[sentById])
+    returnedBy = relationship("User", foreign_keys=[returnedById])
+    destroyedBy = relationship("User", foreign_keys=[destroyedById])
+    recoveredBy = relationship("User", foreign_keys=[recoveredById])
+    physicalDamageBy = relationship("User", foreign_keys=[physicalDamageById])
+    physicallyDestroyedBy = relationship("User", foreign_keys=[physicallyDestroyedById])
+    refilledBy = relationship("User", foreign_keys=[refilledById])
+    container = relationship("Container", back_populates="shoes", foreign_keys=[containerId])

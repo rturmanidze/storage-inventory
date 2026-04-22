@@ -62,17 +62,20 @@ export default function Import() {
   const activeTypeInfo = importTypes.find(t => t.value === activeTab)!
 
   return (
-    <div className="max-w-3xl mx-auto space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Import</h1>
+    <div className="max-w-3xl mx-auto space-y-5">
+      <div>
+        <h1 className="page-title">Import</h1>
+        <p className="page-subtitle">Bulk import data from CSV or XLSX files</p>
+      </div>
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-0">
+      <div className="flex flex-wrap gap-1 border-b border-gray-100 pb-0">
         {importTypes.map(t => (
           <button
             key={t.value}
             className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors border-b-2 -mb-px ${
               activeTab === t.value
-                ? 'border-indigo-600 text-indigo-700 bg-indigo-50'
+                ? 'border-primary-600 text-primary-700 bg-primary-50'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
             onClick={() => {
@@ -99,7 +102,7 @@ export default function Import() {
               ref={fileRef}
               type="file"
               accept=".csv,.xlsx,.xls"
-              className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
+              className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer"
             />
           </div>
           <button
@@ -130,16 +133,16 @@ export default function Import() {
 
           {result.errors.length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Error Details</h3>
+              <h3 className="section-title mb-2">Error Details</h3>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <table className="min-w-full divide-y divide-gray-100 text-sm">
                   <thead>
                     <tr>
                       <th className="table-header w-16">Row</th>
                       <th className="table-header">Message</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-gray-50">
                     {result.errors.map((err, i) => (
                       <tr key={i} className="bg-red-50">
                         <td className="table-cell font-mono">{err.row}</td>

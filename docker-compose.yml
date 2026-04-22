@@ -22,12 +22,16 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-inventory}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-inventory}
       JWT_SECRET: ${JWT_SECRET:-changeme_long_random_secret_at_least_32_chars}
-      PORT: 3000
+      PORT: 3010
+      BACKUP_DIR: /backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "3010:3010"
+    volumes:
+      - backups:/backups
 
   web:
     build:
@@ -37,7 +41,8 @@ services:
     depends_on:
       - api
     ports:
-      - "8080:80"
+      - "8085:443"
 
 volumes:
   db_data:
+  backups:
