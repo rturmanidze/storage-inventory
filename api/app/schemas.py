@@ -536,6 +536,11 @@ class CardInventorySummary(BaseModel):
     shreddedRedDecks: int = 0
     shreddedPlasticDecks: int = 0
     shreddedPaperDecks: int = 0
+    # Total physical stock across ALL containers (locked + unlocked, non-archived)
+    # These differ from blackDecks/redDecks/totalDecks when containers are locked.
+    totalStockDecks: int = 0
+    totalStockCards: int = 0
+    lockedDecks: int = 0
 
 
 class DeckColorStatus(BaseModel):
@@ -663,6 +668,10 @@ class CardReportSummary(BaseModel):
     shreddedPaperCards: int = 0
     dailyShredding: List[DeckConsumptionDay] = []
     dailyConsumption: List[DeckConsumptionDay]
+    # Total physical stock across ALL containers (locked + unlocked, non-archived)
+    totalStockDecks: int = 0
+    totalStockCards: int = 0
+    lockedDecks: int = 0
 
 
 

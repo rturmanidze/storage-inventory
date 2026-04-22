@@ -68,6 +68,24 @@ def _get_available_decks(db: Session, color: CardColor) -> int:
         or 0
     )
 
+
+def _get_total_decks(db: Session, color: CardColor) -> int:
+    """Return total physical deck count for a given color across ALL non-archived containers.
+
+    Unlike _get_available_decks, this includes locked containers.
+    Used for display purposes so operators always see the true physical stock
+    even when containers are locked.
+    """
+    return int(
+        db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
+        .filter(
+            Container.color == color,
+            Container.archivedAt.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+
 def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
     """Return available deck count for a given material across all colors."""
     return int(
@@ -270,6 +288,13 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
     shredded_plastic_decks = (shredded_plastic_events + shredded_plastic_extra) * DECKS_PER_SHOE
     shredded_paper_decks = (shredded_paper_events + shredded_paper_extra) * DECKS_PER_SHOE
 
+    # Total physical stock across ALL non-archived containers (locked + unlocked)
+    total_stock_black = _get_total_decks(db, CardColor.BLACK)
+    total_stock_red = _get_total_decks(db, CardColor.RED)
+    total_stock_decks = total_stock_black + total_stock_red
+    # Locked = total stock minus available (unlocked)
+    locked_decks = total_stock_decks - (black_decks + red_decks)
+
     return CardInventorySummary(
         blackDecks=black_decks,
         redDecks=red_decks,
@@ -301,6 +326,9 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         shreddedRedDecks=shredded_red_decks,
         shreddedPlasticDecks=shredded_plastic_decks,
         shreddedPaperDecks=shredded_paper_decks,
+        totalStockDecks=total_stock_decks,
+        totalStockCards=total_stock_decks * CARDS_PER_DECK,
+        lockedDecks=locked_decks,
     )
 
 

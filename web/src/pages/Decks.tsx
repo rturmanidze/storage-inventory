@@ -39,6 +39,9 @@ interface CardInventory {
   shoesInWarehouse: number
   shoesSentToStudio: number
   totalShoes: number
+  totalStockDecks: number
+  totalStockCards: number
+  lockedDecks: number
 }
 
 interface DeckColorStatus {
@@ -200,38 +203,60 @@ export default function Decks() {
 
       {/* Summary cards */}
       {inventory && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className={`card p-4 text-center ${isBlackLow ? 'ring-2 ring-amber-400' : ''}`}>
-            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Black Decks</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.blackDecks}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{inventory.blackCards.toLocaleString()} cards</p>
-            {isBlackLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
-          </div>
-          <div className={`card p-4 text-center ${isRedLow ? 'ring-2 ring-amber-400' : ''}`}>
-            <p className="text-xs text-red-500 uppercase tracking-wide font-semibold">Red Decks</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.redDecks}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{inventory.redCards.toLocaleString()} cards</p>
-            {isRedLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
-          </div>
-          <div className="card p-4 text-center">
-            <p className="text-xs text-blue-500 uppercase tracking-wide font-semibold">Plastic</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.plasticDecks ?? 0}</p>
-            <p className="text-xs text-gray-400 mt-0.5">decks</p>
-          </div>
-          <div className="card p-4 text-center">
-            <p className="text-xs text-amber-500 uppercase tracking-wide font-semibold">Paper</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.paperDecks ?? 0}</p>
-            <p className="text-xs text-gray-400 mt-0.5">decks</p>
-          </div>
-          <div className="card p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Decks</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.totalDecks}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{inventory.totalDecks >= 8 ? `${Math.floor(inventory.totalDecks / 8)} shoes possible` : 'Need 8 decks/shoe'}</p>
-          </div>
-          <div className="card p-4 text-center">
-            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Cards</p>
-            <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.totalCards.toLocaleString()}</p>
-            <p className="text-xs text-gray-400 mt-0.5">52 per deck</p>
+        <div className="space-y-3">
+          {/* Total Stock vs Available callout — shown when decks are locked */}
+          {inventory.lockedDecks > 0 && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3">
+              <svg className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+              </svg>
+              <div className="text-sm text-blue-800">
+                <p className="font-semibold mb-0.5">Some containers are locked</p>
+                <p>
+                  <span className="font-medium">{inventory.lockedDecks} decks</span> are in locked containers and not available for use.
+                  Total physical stock: <span className="font-medium">{inventory.totalStockDecks} decks</span>.
+                  Unlock containers to make them available.
+                </p>
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className={`card p-4 text-center ${isBlackLow ? 'ring-2 ring-amber-400' : ''}`}>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Black Decks</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.blackDecks}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{inventory.blackCards.toLocaleString()} cards</p>
+              {isBlackLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
+            </div>
+            <div className={`card p-4 text-center ${isRedLow ? 'ring-2 ring-amber-400' : ''}`}>
+              <p className="text-xs text-red-500 uppercase tracking-wide font-semibold">Red Decks</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.redDecks}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{inventory.redCards.toLocaleString()} cards</p>
+              {isRedLow && <p className="text-xs text-amber-600 font-semibold mt-1">⚠ Low stock</p>}
+            </div>
+            <div className="card p-4 text-center">
+              <p className="text-xs text-blue-500 uppercase tracking-wide font-semibold">Plastic</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.plasticDecks ?? 0}</p>
+              <p className="text-xs text-gray-400 mt-0.5">decks</p>
+            </div>
+            <div className="card p-4 text-center">
+              <p className="text-xs text-amber-500 uppercase tracking-wide font-semibold">Paper</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.paperDecks ?? 0}</p>
+              <p className="text-xs text-gray-400 mt-0.5">decks</p>
+            </div>
+            <div className="card p-4 text-center" title="Decks available for use (from unlocked containers only)">
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Available for Use</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.totalDecks}</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {inventory.totalDecks >= 8 ? `${Math.floor(inventory.totalDecks / 8)} shoes possible` : 'Need 8 decks/shoe'}
+              </p>
+            </div>
+            <div className="card p-4 text-center" title="Total physical stock in ALL containers (including locked)">
+              <p className="text-xs text-emerald-600 uppercase tracking-wide font-semibold">Total Stock</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.totalStockDecks}</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {inventory.lockedDecks > 0 ? `${inventory.lockedDecks} locked` : 'all unlocked'}
+              </p>
+            </div>
           </div>
         </div>
       )}

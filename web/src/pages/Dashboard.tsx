@@ -28,6 +28,9 @@ interface CardInventorySummary {
   totalShreddedCards: number
   shreddedBlackDecks: number
   shreddedRedDecks: number
+  totalStockDecks: number
+  totalStockCards: number
+  lockedDecks: number
 }
 
 interface DeckColorStatus {
@@ -247,21 +250,38 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
+          {/* Locked containers warning banner */}
+          {inventory && inventory.lockedDecks > 0 && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3">
+              <svg className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+              </svg>
+              <div className="text-sm text-blue-800">
+                <p className="font-semibold mb-0.5">Locked containers reduce available stock</p>
+                <p>
+                  <span className="font-medium">{inventory.lockedDecks} decks</span> are held in locked containers and excluded from operational use.
+                  Total physical stock: <span className="font-medium">{inventory.totalStockDecks} decks</span> ·
+                  Available for use: <span className="font-medium">{inventory.totalDecks} decks</span>.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Primary KPI Cards — Deck Inventory */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
-              label="In Stock — Black Decks"
+              label="Available — Black Decks"
               value={inventory?.blackDecks ?? 0}
-              sub={`${(inventory?.blackCards ?? 0).toLocaleString()} cards`}
+              sub={`${(inventory?.blackCards ?? 0).toLocaleString()} cards · unlocked only`}
               accent="bg-gray-800 text-white"
               onClick={() => navigate('/decks?color=BLACK')}
               alert={forecast?.black.isCritical}
               icon={deckIcon}
             />
             <MetricCard
-              label="In Stock — Red Decks"
+              label="Available — Red Decks"
               value={inventory?.redDecks ?? 0}
-              sub={`${(inventory?.redCards ?? 0).toLocaleString()} cards`}
+              sub={`${(inventory?.redCards ?? 0).toLocaleString()} cards · unlocked only`}
               accent="bg-red-50 text-red-600"
               onClick={() => navigate('/decks?color=RED')}
               alert={forecast?.red.isCritical}
@@ -380,9 +400,11 @@ export default function Dashboard() {
             <h2 className="section-title mb-3">Inventory Totals</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <MetricCard
-                label="Total Decks Available"
-                value={inventory?.totalDecks ?? 0}
-                sub={`${(inventory?.totalCards ?? 0).toLocaleString()} cards total`}
+                label="Total Stock — All Decks"
+                value={inventory?.totalStockDecks ?? 0}
+                sub={inventory && inventory.lockedDecks > 0
+                  ? `${inventory.totalDecks} available · ${inventory.lockedDecks} locked`
+                  : `${(inventory?.totalStockCards ?? 0).toLocaleString()} cards total`}
                 accent="bg-primary-50 text-primary-600"
                 onClick={() => navigate('/decks')}
                 icon={deckIcon}

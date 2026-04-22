@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import AuditLog, CardColor, CardMaterial, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, User
+from app.models import AuditLog, CardColor, CardMaterial, Container, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, User
 from app.schemas import CardReportSummary, DashboardStats, DeckConsumptionDay
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -288,6 +288,20 @@ def _get_available_decks_by_material_report(db: Session, material: CardMaterial)
     return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
+def _get_total_decks_report(db: Session) -> int:
+    """Return total physical decks across ALL non-archived containers (locked + unlocked).
+
+    Unlike _get_available_decks_report, this includes locked containers so
+    operators always see the real on-hand stock even when containers are locked.
+    """
+    return int(
+        db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
+        .filter(Container.archivedAt.is_(None))
+        .scalar()
+        or 0
+    )
+
+
 _HOLDING_STATUSES = [
     ShoeStatus.IN_WAREHOUSE,
     ShoeStatus.SENT_TO_STUDIO,
@@ -464,6 +478,10 @@ def get_card_report_summary(
         for row in shredded_rows
     ]
 
+    # Total physical stock (locked + unlocked containers)
+    total_stock_decks = _get_total_decks_report(db)
+    locked_decks = total_stock_decks - total_decks
+
     return CardReportSummary(
         totalBlackDecks=black_decks,
         totalRedDecks=red_decks,
@@ -500,6 +518,9 @@ def get_card_report_summary(
         shreddedPaperCards=shredded_paper_decks * CARDS_PER_DECK,
         dailyShredding=daily_shredding,
         dailyConsumption=daily_consumption,
+        totalStockDecks=total_stock_decks,
+        totalStockCards=total_stock_decks * CARDS_PER_DECK,
+        lockedDecks=locked_decks,
     )
 
 
