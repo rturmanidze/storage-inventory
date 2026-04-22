@@ -59,7 +59,60 @@ def _add_event(
     return event
 
 
-# ── Public helper used by cards.py shoe-creation ──────────────────────────────
+# ── Public helpers used by cards.py shoe-creation / refill ────────────────────
+
+def validate_containers_for_consumption(
+    db: Session,
+    color: CardColor,
+    decks_needed: int,
+    *,
+    material: Optional[CardMaterial] = None,
+) -> None:
+    """Check that unlocked containers can satisfy *decks_needed* for the given color/material.
+
+    Raises HTTPException 400 with a user-actionable message when:
+    - All non-empty containers are locked   → "All containers are locked…"
+    - Some unlocked containers exist but total < *decks_needed* → "Not enough decks…"
+
+    Does nothing when no containers exist at all (legacy / pre-container data).
+    """
+    # Total containers with remaining decks (locked + unlocked)
+    q_any = db.query(func.count(Container.id)).filter(
+        Container.color == color,
+        Container.archivedAt.is_(None),
+        Container.decksRemaining > 0,
+    )
+    if material is not None:
+        q_any = q_any.filter(Container.material == material)
+    any_with_decks = int(q_any.scalar() or 0)
+
+    if any_with_decks == 0:
+        return  # No containers — legacy mode, allow the legacy pool to handle it
+
+    # Total decks available in *unlocked* containers
+    q_unlocked = db.query(func.coalesce(func.sum(Container.decksRemaining), 0)).filter(
+        Container.color == color,
+        Container.archivedAt.is_(None),
+        Container.isLocked.is_(False),
+        Container.decksRemaining > 0,
+    )
+    if material is not None:
+        q_unlocked = q_unlocked.filter(Container.material == material)
+    total_unlocked = int(q_unlocked.scalar() or 0)
+
+    if total_unlocked >= decks_needed:
+        return  # Enough available — all good
+
+    if total_unlocked == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="All containers are locked. Please unlock a container to continue.",
+        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Not enough decks in unlocked containers. Please unlock another container.",
+    )
+
 
 def consume_decks_fifo(
     db: Session,

@@ -9,6 +9,16 @@ interface Studio {
   name: string
 }
 
+interface ContainerInfo {
+  id: number
+  code: string
+  color: 'BLACK' | 'RED'
+  material: 'PLASTIC' | 'PAPER'
+  decksRemaining: number
+  isLocked: boolean
+  archivedAt: string | null
+}
+
 type ShoeStatus =
   | 'IN_WAREHOUSE'
   | 'SENT_TO_STUDIO'
@@ -147,10 +157,17 @@ export default function Shoes() {
     queryFn: () => api.get('/studios').then(r => r.data),
   })
 
+  const { data: containers = [] } = useQuery<ContainerInfo[]>({
+    queryKey: ['containers-active'],
+    queryFn: () => api.get('/containers?archived=false').then(r => r.data),
+    refetchInterval: 15_000,
+  })
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['shoes'] })
     qc.invalidateQueries({ queryKey: ['card-inventory'] })
     qc.invalidateQueries({ queryKey: ['dashboard-card-stats'] })
+    qc.invalidateQueries({ queryKey: ['containers-active'] })
   }
 
   const createMutation = useMutation({
@@ -233,6 +250,16 @@ export default function Shoes() {
 
   const availableBlack = inventory?.blackDecks ?? 0
   const availableRed = inventory?.redDecks ?? 0
+
+  // Per-color unlocked container summary for UI feedback
+  const unlockedBlack = containers.filter(c => c.color === 'BLACK' && !c.isLocked && c.decksRemaining > 0)
+  const unlockedRed = containers.filter(c => c.color === 'RED' && !c.isLocked && c.decksRemaining > 0)
+  const lockedBlack = containers.filter(c => c.color === 'BLACK' && c.isLocked && c.decksRemaining > 0)
+  const lockedRed = containers.filter(c => c.color === 'RED' && c.isLocked && c.decksRemaining > 0)
+  const allBlackLocked = containers.some(c => c.color === 'BLACK' && c.decksRemaining > 0) && unlockedBlack.length === 0
+  const allRedLocked = containers.some(c => c.color === 'RED' && c.decksRemaining > 0) && unlockedRed.length === 0
+  const unlockedBlackDecks = unlockedBlack.reduce((s, c) => s + c.decksRemaining, 0)
+  const unlockedRedDecks = unlockedRed.reduce((s, c) => s + c.decksRemaining, 0)
 
   const filterOptions: { value: StatusFilter; label: string }[] = [
     { value: 'ALL', label: 'All' },
@@ -517,8 +544,20 @@ export default function Shoes() {
                 <p className="font-medium text-gray-700 mb-2">Creation Requirements</p>
                 <ul className="space-y-1 text-xs">
                   <li>• 1 shoe = 8 decks = 416 cards</li>
-                  <li>• Black available: <strong>{availableBlack} decks</strong></li>
-                  <li>• Red available: <strong>{availableRed} decks</strong></li>
+                  <li>• Black available: <strong>{availableBlack} decks</strong>
+                    {allBlackLocked
+                      ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
+                      : unlockedBlack.length > 0
+                        ? <span className="text-green-600 ml-1">({unlockedBlack.length} unlocked container{unlockedBlack.length !== 1 ? 's' : ''}, {unlockedBlackDecks} decks)</span>
+                        : null}
+                  </li>
+                  <li>• Red available: <strong>{availableRed} decks</strong>
+                    {allRedLocked
+                      ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
+                      : unlockedRed.length > 0
+                        ? <span className="text-green-600 ml-1">({unlockedRed.length} unlocked container{unlockedRed.length !== 1 ? 's' : ''}, {unlockedRedDecks} decks)</span>
+                        : null}
+                  </li>
                 </ul>
               </div>
               <div>
@@ -526,7 +565,9 @@ export default function Shoes() {
                 <div className="flex gap-3">
                   {(['BLACK', 'RED'] as const).map(c => {
                     const available = c === 'BLACK' ? availableBlack : availableRed
-                    const canCreate = available >= 8
+                    const allLocked = c === 'BLACK' ? allBlackLocked : allRedLocked
+                    const unlockedDecks = c === 'BLACK' ? unlockedBlackDecks : unlockedRedDecks
+                    const canCreate = available >= 8 && !allLocked && unlockedDecks >= 8
                     return (
                       <button
                         key={c}
@@ -542,7 +583,7 @@ export default function Shoes() {
                         <div className="text-2xl mb-1">{c === 'BLACK' ? '⬛' : '🔴'}</div>
                         <div>{c === 'BLACK' ? 'Black' : 'Red'}</div>
                         <div className={`text-xs mt-1 ${canCreate ? 'text-gray-400' : 'text-red-400'}`}>
-                          {available} decks available
+                          {allLocked ? '🔒 All containers locked' : `${available} decks available`}
                         </div>
                       </button>
                     )
@@ -586,6 +627,11 @@ export default function Shoes() {
                 />
                 <p className="text-xs text-gray-400 mt-1">This will be the displayed shoe identifier (e.g. Shoe #A1).</p>
               </div>
+              {(selectedColor === 'BLACK' ? allBlackLocked : allRedLocked) && (
+                <div className="bg-red-50 rounded-lg p-3 text-xs text-red-700 font-medium">
+                  🔒 All {selectedColor.toLowerCase()} containers are locked. Please unlock a container to continue.
+                </div>
+              )}
               <div className="flex gap-3 pt-1">
                 <button className="btn-ghost flex-1" onClick={() => setCreateModalOpen(false)}>Cancel</button>
                 <button
@@ -593,6 +639,7 @@ export default function Shoes() {
                   disabled={
                     createMutation.isPending ||
                     !shoeNumberInput.trim() ||
+                    (selectedColor === 'BLACK' ? allBlackLocked || unlockedBlackDecks < 8 : allRedLocked || unlockedRedDecks < 8) ||
                     (selectedColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)
                   }
                   onClick={() => createMutation.mutate({ color: selectedColor, material: selectedMaterial, shoeNumber: shoeNumberInput.trim() })}
@@ -769,8 +816,20 @@ export default function Shoes() {
                 <p className="font-medium mb-2">Refill Requirements</p>
                 <ul className="space-y-1 text-xs">
                   <li>• Exactly 8 decks (416 cards) will be loaded</li>
-                  <li>• Black available: <strong>{availableBlack} decks</strong></li>
-                  <li>• Red available: <strong>{availableRed} decks</strong></li>
+                  <li>• Black available: <strong>{availableBlack} decks</strong>
+                    {allBlackLocked
+                      ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
+                      : unlockedBlack.length > 0
+                        ? <span className="text-green-600 ml-1">({unlockedBlack.length} unlocked, {unlockedBlackDecks} decks)</span>
+                        : null}
+                  </li>
+                  <li>• Red available: <strong>{availableRed} decks</strong>
+                    {allRedLocked
+                      ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
+                      : unlockedRed.length > 0
+                        ? <span className="text-green-600 ml-1">({unlockedRed.length} unlocked, {unlockedRedDecks} decks)</span>
+                        : null}
+                  </li>
                 </ul>
               </div>
               <div>
@@ -778,7 +837,9 @@ export default function Shoes() {
                 <div className="flex gap-3">
                   {(['BLACK', 'RED'] as const).map(c => {
                     const available = c === 'BLACK' ? availableBlack : availableRed
-                    const canRefill = available >= 8
+                    const allLocked = c === 'BLACK' ? allBlackLocked : allRedLocked
+                    const unlockedDecks = c === 'BLACK' ? unlockedBlackDecks : unlockedRedDecks
+                    const canRefill = available >= 8 && !allLocked && unlockedDecks >= 8
                     return (
                       <button
                         key={c}
@@ -794,7 +855,7 @@ export default function Shoes() {
                         <div className="text-2xl mb-1">{c === 'BLACK' ? '⬛' : '🔴'}</div>
                         <div>{c === 'BLACK' ? 'Black' : 'Red'}</div>
                         <div className={`text-xs mt-1 ${canRefill ? 'text-gray-400' : 'text-red-400'}`}>
-                          {available} decks available
+                          {allLocked ? '🔒 All containers locked' : `${available} decks available`}
                         </div>
                       </button>
                     )
@@ -818,12 +879,18 @@ export default function Shoes() {
                 Refilling with <strong>{refillColor === 'BLACK' ? 'Black' : 'Red'}</strong> cards will consume{' '}
                 <strong>8 decks</strong> ({(8 * 52).toLocaleString()} cards) from inventory.
               </div>
+              {(refillColor === 'BLACK' ? allBlackLocked : allRedLocked) && (
+                <div className="bg-red-50 rounded-lg p-3 text-xs text-red-700 font-medium">
+                  🔒 All {refillColor.toLowerCase()} containers are locked. Please unlock a container to continue.
+                </div>
+              )}
               <div className="flex gap-3 pt-1">
                 <button className="btn-ghost flex-1" onClick={() => { setRefillModalShoe(null); setRefillStudioId('') }}>Cancel</button>
                 <button
                   className="btn-primary flex-1"
                   disabled={
                     refillMutation.isPending ||
+                    (refillColor === 'BLACK' ? allBlackLocked || unlockedBlackDecks < 8 : allRedLocked || unlockedRedDecks < 8) ||
                     (refillColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)
                   }
                   onClick={() => refillMutation.mutate({

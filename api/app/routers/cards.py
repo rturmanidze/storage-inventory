@@ -507,6 +507,10 @@ def create_shoe(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
+    # Enforce container lock policy before any deck deduction
+    from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
+    validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE, material=body.material)
+
     # Check availability for the specific color+material combination
     available = _get_available_decks_by_material(db, body.color, body.material)
     if available < DECKS_PER_SHOE:
@@ -529,7 +533,6 @@ def create_shoe(
     db.flush()
 
     # FIFO container consumption filtered by color AND material
-    from app.routers.containers import consume_decks_fifo  # noqa: PLC0415
     container = consume_decks_fifo(
         db, body.color, DECKS_PER_SHOE,
         material=body.material,
@@ -537,8 +540,13 @@ def create_shoe(
         shoe_id=shoe.id,
         request=request,
     )
-    if container is not None:
-        shoe.containerId = container.id
+    if container is None:
+        # Race condition: another transaction consumed the last decks between pre-check and here
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough decks in unlocked containers. Please unlock another container.",
+        )
+    shoe.containerId = container.id
 
     log_action(
         db,
@@ -551,8 +559,8 @@ def create_shoe(
             "material": body.material.value,
             "decksConsumed": DECKS_PER_SHOE,
             "shoeNumber": shoe.shoeNumber,
-            "containerId": container.id if container else None,
-            "containerCode": container.code if container else None,
+            "containerId": container.id,
+            "containerCode": container.code,
         },
         request=request,
     )
@@ -791,6 +799,10 @@ def replace_shoe(
             ),
         )
 
+    # Enforce container lock policy — same rules as new shoe creation
+    from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
+    validate_containers_for_consumption(db, original.color, DECKS_PER_SHOE)
+
     available = _get_available_decks(db, original.color)
     if available < DECKS_PER_SHOE:
         raise HTTPException(
@@ -820,15 +832,19 @@ def replace_shoe(
     db.flush()
 
     # FIFO container consumption
-    from app.routers.containers import consume_decks_fifo  # noqa: PLC0415
     container = consume_decks_fifo(
         db, original.color, DECKS_PER_SHOE,
         user_id=current_user.id,
         shoe_id=new_shoe.id,
         request=request,
     )
-    if container is not None:
-        new_shoe.containerId = container.id
+    if container is None:
+        # Race condition: another transaction consumed the last decks between pre-check and here
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough decks in unlocked containers. Please unlock another container.",
+        )
+    new_shoe.containerId = container.id
 
     log_action(
         db,
@@ -842,7 +858,7 @@ def replace_shoe(
             "color": new_shoe.color.value,
             "decksConsumed": DECKS_PER_SHOE,
             "sentToStudio": body.studioId,
-            "containerId": container.id if container else None,
+            "containerId": container.id,
         },
         request=request,
     )
@@ -944,6 +960,10 @@ def refill_shoe(
             ),
         )
 
+    # Enforce container lock policy — same rules as new shoe creation
+    from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
+    validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE)
+
     available = _get_available_decks(db, body.color)
     if available < DECKS_PER_SHOE:
         raise HTTPException(
@@ -961,6 +981,23 @@ def refill_shoe(
     # Clear studio assignment from prior cycle
     shoe.studioId = None
 
+    db.flush()
+
+    # Deduct 8 decks from containers in FIFO order — identical logic to new shoe creation
+    container = consume_decks_fifo(
+        db, body.color, DECKS_PER_SHOE,
+        user_id=current_user.id,
+        shoe_id=shoe.id,
+        request=request,
+    )
+    if container is None:
+        # Race condition: another transaction consumed the last decks between pre-check and here
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough decks in unlocked containers. Please unlock another container.",
+        )
+    shoe.containerId = container.id
+
     log_action(
         db,
         "REFILL_SHOE",
@@ -972,6 +1009,8 @@ def refill_shoe(
             "color": body.color.value,
             "decksConsumed": DECKS_PER_SHOE,
             "cardsLoaded": DECKS_PER_SHOE * CARDS_PER_DECK,
+            "containerId": container.id,
+            "containerCode": container.code,
         },
         request=request,
     )
