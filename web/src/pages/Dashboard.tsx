@@ -20,8 +20,14 @@ interface CardInventorySummary {
   shoesInWarehouse: number
   shoesSentToStudio: number
   shoesReturned: number
+  shoesCardsDestroyed: number
+  shoesPhysicallyDestroyed: number
   shoesDestroyed: number
   totalShoes: number
+  totalShreddedDecks: number
+  totalShreddedCards: number
+  shreddedBlackDecks: number
+  shreddedRedDecks: number
 }
 
 interface DeckColorStatus {
@@ -398,11 +404,50 @@ export default function Dashboard() {
                 icon={shoeIcon}
               />
               <MetricCard
-                label="Shoes Destroyed"
-                value={inventory?.shoesDestroyed ?? 0}
-                sub="permanently removed"
+                label="Destroyed Shoes"
+                value={inventory?.shoesPhysicallyDestroyed ?? 0}
+                sub="physically destroyed"
                 accent="bg-rose-50 text-rose-600"
-                onClick={() => navigate('/shoes/destroyed')}
+                onClick={() => navigate('/shoes/destroyed?filter=PHYSICALLY_DESTROYED')}
+                icon={shoeIcon}
+              />
+            </div>
+          </div>
+
+          {/* Shredding Stats */}
+          <div>
+            <h2 className="section-title mb-3">Shredded Decks</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <MetricCard
+                label="Shredded Decks"
+                value={inventory?.totalShreddedDecks ?? 0}
+                sub="total deck-loads shredded"
+                accent="bg-red-50 text-red-600"
+                onClick={() => navigate('/shoes/destroyed?filter=CARDS_DESTROYED')}
+                icon={
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12-3-3m0 0-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                  </svg>
+                }
+              />
+              <MetricCard
+                label="Shredded Cards"
+                value={(inventory?.totalShreddedCards ?? 0).toLocaleString()}
+                sub="individual cards shredded"
+                accent="bg-red-50 text-red-600"
+                onClick={() => navigate('/shoes/destroyed?filter=CARDS_DESTROYED')}
+                icon={
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6a1.125 1.125 0 0 1-1.125-1.125v-3.75ZM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-8.25ZM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 0 1-1.125-1.125v-2.25Z" />
+                  </svg>
+                }
+              />
+              <MetricCard
+                label="Shoes with Shredded Decks"
+                value={inventory?.shoesCardsDestroyed ?? 0}
+                sub="currently in shredded state"
+                accent="bg-orange-50 text-orange-600"
+                onClick={() => navigate('/shoes/destroyed?filter=CARDS_DESTROYED')}
                 icon={shoeIcon}
               />
             </div>

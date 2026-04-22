@@ -288,12 +288,64 @@ def _get_available_decks_by_material_report(db: Session, material: CardMaterial)
     return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
+_HOLDING_STATUSES = [
+    ShoeStatus.IN_WAREHOUSE,
+    ShoeStatus.SENT_TO_STUDIO,
+    ShoeStatus.RETURNED,
+    ShoeStatus.REFILLED,
+]
+
+
+def _compute_shredded_metrics(db: Session) -> dict:
+    """Compute deck shredding metrics (total, by color, by material).
+
+    Each card-shred event permanently removes DECKS_PER_SHOE (8) decks.
+    Accounts for both first-cycle destructions and re-destructions after refill.
+    """
+    def _extra(filters: list) -> int:
+        return int(
+            db.query(func.count(Shoe.id))
+            .filter(
+                *filters,
+                Shoe.refilledAt.isnot(None),
+                Shoe.destroyedAt.isnot(None),
+                ~Shoe.status.in_(_HOLDING_STATUSES),
+            )
+            .scalar() or 0
+        )
+
+    # Total
+    base_total = int(db.query(func.count(Shoe.id)).filter(Shoe.destroyedAt.isnot(None)).scalar() or 0)
+    extra_total = _extra([])
+    total_events = base_total + extra_total
+
+    # By color
+    base_black = int(db.query(func.count(Shoe.id)).filter(Shoe.color == CardColor.BLACK, Shoe.destroyedAt.isnot(None)).scalar() or 0)
+    extra_black = _extra([Shoe.color == CardColor.BLACK])
+    base_red = int(db.query(func.count(Shoe.id)).filter(Shoe.color == CardColor.RED, Shoe.destroyedAt.isnot(None)).scalar() or 0)
+    extra_red = _extra([Shoe.color == CardColor.RED])
+
+    # By material
+    base_plastic = int(db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PLASTIC, Shoe.destroyedAt.isnot(None)).scalar() or 0)
+    extra_plastic = _extra([Shoe.material == CardMaterial.PLASTIC])
+    base_paper = int(db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER, Shoe.destroyedAt.isnot(None)).scalar() or 0)
+    extra_paper = _extra([Shoe.material == CardMaterial.PAPER])
+
+    return {
+        "totalEvents": total_events,
+        "blackEvents": base_black + extra_black,
+        "redEvents": base_red + extra_red,
+        "plasticEvents": base_plastic + extra_plastic,
+        "paperEvents": base_paper + extra_paper,
+    }
+
+
 @router.get("/cards/summary", response_model=CardReportSummary)
 def get_card_report_summary(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Casino card inventory summary report with daily consumption trends."""
+    """Casino card inventory summary report with daily consumption and shredding trends."""
     black_decks = _get_available_decks_report(db, CardColor.BLACK)
     red_decks = _get_available_decks_report(db, CardColor.RED)
     total_decks = black_decks + red_decks
@@ -336,6 +388,14 @@ def get_card_report_summary(
     paper_shoes = int(
         db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER).scalar() or 0
     )
+
+    # Shredded deck metrics
+    shred = _compute_shredded_metrics(db)
+    total_shredded_decks = shred["totalEvents"] * DECKS_PER_SHOE
+    shredded_black_decks = shred["blackEvents"] * DECKS_PER_SHOE
+    shredded_red_decks = shred["redEvents"] * DECKS_PER_SHOE
+    shredded_plastic_decks = shred["plasticEvents"] * DECKS_PER_SHOE
+    shredded_paper_decks = shred["paperEvents"] * DECKS_PER_SHOE
 
     # Daily deck consumption over last 30 days (decks consumed = shoes created * 8 - shoes returned * 8)
     cutoff = datetime.utcnow() - timedelta(days=30)
@@ -383,6 +443,27 @@ def get_card_report_summary(
         for day, vals in sorted(daily.items())
     ]
 
+    # Daily shredding trend over last 30 days
+    shredded_rows = (
+        db.query(
+            func.date_trunc("day", Shoe.destroyedAt).label("day"),
+            func.count(Shoe.id).label("shoes_shredded"),
+        )
+        .filter(Shoe.destroyedAt >= cutoff)
+        .group_by("day")
+        .order_by("day")
+        .all()
+    )
+    daily_shredding = [
+        DeckConsumptionDay(
+            day=row.day.date().isoformat(),
+            shoesCreated=0,
+            shoesReturned=int(row.shoes_shredded),
+            decksConsumed=int(row.shoes_shredded) * DECKS_PER_SHOE,
+        )
+        for row in shredded_rows
+    ]
+
     return CardReportSummary(
         totalBlackDecks=black_decks,
         totalRedDecks=red_decks,
@@ -407,8 +488,89 @@ def get_card_report_summary(
         totalShoes=int(total_shoes),
         plasticShoesCreated=plastic_shoes,
         paperShoesCreated=paper_shoes,
+        totalShreddedDecks=total_shredded_decks,
+        totalShreddedCards=total_shredded_decks * CARDS_PER_DECK,
+        shreddedBlackDecks=shredded_black_decks,
+        shreddedRedDecks=shredded_red_decks,
+        shreddedBlackCards=shredded_black_decks * CARDS_PER_DECK,
+        shreddedRedCards=shredded_red_decks * CARDS_PER_DECK,
+        shreddedPlasticDecks=shredded_plastic_decks,
+        shreddedPaperDecks=shredded_paper_decks,
+        shreddedPlasticCards=shredded_plastic_decks * CARDS_PER_DECK,
+        shreddedPaperCards=shredded_paper_decks * CARDS_PER_DECK,
+        dailyShredding=daily_shredding,
         dailyConsumption=daily_consumption,
     )
+
+
+@router.get("/cards/shredded-decks")
+def get_shredded_decks_report(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Summary of permanently shredded decks, broken down by color and material."""
+    shred = _compute_shredded_metrics(db)
+    total_decks = shred["totalEvents"] * DECKS_PER_SHOE
+    return {
+        "totalShreddedDecks": total_decks,
+        "totalShreddedCards": total_decks * CARDS_PER_DECK,
+        "byColor": {
+            "BLACK": {
+                "decks": shred["blackEvents"] * DECKS_PER_SHOE,
+                "cards": shred["blackEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+            },
+            "RED": {
+                "decks": shred["redEvents"] * DECKS_PER_SHOE,
+                "cards": shred["redEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+            },
+        },
+        "byMaterial": {
+            "PLASTIC": {
+                "decks": shred["plasticEvents"] * DECKS_PER_SHOE,
+                "cards": shred["plasticEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+            },
+            "PAPER": {
+                "decks": shred["paperEvents"] * DECKS_PER_SHOE,
+                "cards": shred["paperEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+            },
+        },
+    }
+
+
+@router.get("/cards/destroyed-shoes")
+def get_destroyed_shoes_report(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Summary of physically destroyed shoe containers (not deck shredding)."""
+    total_phys_destroyed = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED).scalar() or 0
+    )
+    black_phys = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED, Shoe.color == CardColor.BLACK)
+        .scalar() or 0
+    )
+    red_phys = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED, Shoe.color == CardColor.RED)
+        .scalar() or 0
+    )
+    plastic_phys = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED, Shoe.material == CardMaterial.PLASTIC)
+        .scalar() or 0
+    )
+    paper_phys = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.status == ShoeStatus.PHYSICALLY_DESTROYED, Shoe.material == CardMaterial.PAPER)
+        .scalar() or 0
+    )
+    return {
+        "totalDestroyedShoes": total_phys_destroyed,
+        "byColor": {"BLACK": black_phys, "RED": red_phys},
+        "byMaterial": {"PLASTIC": plastic_phys, "PAPER": paper_phys},
+    }
 
 
 @router.get("/cards/shoes/csv")
@@ -437,9 +599,9 @@ def export_destroyed_shoes_csv(
             "created_by": s.createdBy.username if s.createdBy else "",
             "sent_at": s.sentAt.isoformat() if s.sentAt else "",
             "returned_at": s.returnedAt.isoformat() if s.returnedAt else "",
-            "cards_destroyed_at": s.destroyedAt.isoformat() if s.destroyedAt else "",
-            "cards_destroyed_by": s.destroyedBy.username if s.destroyedBy else "",
-            "cards_destroy_reason": s.destroyReason or "",
+            "cards_shredded_at": s.destroyedAt.isoformat() if s.destroyedAt else "",
+            "cards_shredded_by": s.destroyedBy.username if s.destroyedBy else "",
+            "cards_shred_reason": s.destroyReason or "",
             "recovered_at": s.recoveredAt.isoformat() if s.recoveredAt else "",
             "recovered_by": s.recoveredBy.username if s.recoveredBy else "",
             "physical_damage_at": s.physicalDamageAt.isoformat() if s.physicalDamageAt else "",

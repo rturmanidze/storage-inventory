@@ -165,6 +165,111 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
     paper_shoes = int(
         db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER).scalar() or 0
     )
+
+    # Shredded deck metrics (each card-shred event = 8 decks permanently removed)
+    # Shoes whose cards have ever been shredded (destroyedAt IS NOT NULL)
+    shredded_events_total = int(
+        db.query(func.count(Shoe.id)).filter(Shoe.destroyedAt.isnot(None)).scalar() or 0
+    )
+    # Extra shred events from refilled-then-destroyed shoes
+    extra_shred_events = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE,
+                ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED,
+                ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar() or 0
+    )
+    total_shredded_events = shredded_events_total + extra_shred_events
+
+    # By color
+    shredded_black_events = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.color == CardColor.BLACK, Shoe.destroyedAt.isnot(None))
+        .scalar() or 0
+    )
+    shredded_black_extra = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == CardColor.BLACK,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar() or 0
+    )
+    shredded_red_events = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.color == CardColor.RED, Shoe.destroyedAt.isnot(None))
+        .scalar() or 0
+    )
+    shredded_red_extra = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.color == CardColor.RED,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar() or 0
+    )
+
+    # By material
+    shredded_plastic_events = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.material == CardMaterial.PLASTIC, Shoe.destroyedAt.isnot(None))
+        .scalar() or 0
+    )
+    shredded_plastic_extra = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.material == CardMaterial.PLASTIC,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar() or 0
+    )
+    shredded_paper_events = int(
+        db.query(func.count(Shoe.id))
+        .filter(Shoe.material == CardMaterial.PAPER, Shoe.destroyedAt.isnot(None))
+        .scalar() or 0
+    )
+    shredded_paper_extra = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.material == CardMaterial.PAPER,
+            Shoe.refilledAt.isnot(None),
+            Shoe.destroyedAt.isnot(None),
+            ~Shoe.status.in_([
+                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
+                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
+            ]),
+        )
+        .scalar() or 0
+    )
+
+    total_shredded_decks = total_shredded_events * DECKS_PER_SHOE
+    shredded_black_decks = (shredded_black_events + shredded_black_extra) * DECKS_PER_SHOE
+    shredded_red_decks = (shredded_red_events + shredded_red_extra) * DECKS_PER_SHOE
+    shredded_plastic_decks = (shredded_plastic_events + shredded_plastic_extra) * DECKS_PER_SHOE
+    shredded_paper_decks = (shredded_paper_events + shredded_paper_extra) * DECKS_PER_SHOE
+
     return CardInventorySummary(
         blackDecks=black_decks,
         redDecks=red_decks,
@@ -190,6 +295,12 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         totalShoes=total_shoes,
         plasticShoes=plastic_shoes,
         paperShoes=paper_shoes,
+        totalShreddedDecks=total_shredded_decks,
+        totalShreddedCards=total_shredded_decks * CARDS_PER_DECK,
+        shreddedBlackDecks=shredded_black_decks,
+        shreddedRedDecks=shredded_red_decks,
+        shreddedPlasticDecks=shredded_plastic_decks,
+        shreddedPaperDecks=shredded_paper_decks,
     )
 
 
@@ -703,24 +814,16 @@ def return_shoe_from_studio(
     return shoe
 
 
-@router.post("/shoes/{shoe_id}/destroy", response_model=ShoeOut)
-def destroy_cards(
+def _shred_cards_logic(
     shoe_id: int,
     body: DestroyShoeRequest,
     request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
-):
-    """Destroy the cards inside a shoe (NOT the physical shoe container).
+    db: Session,
+    current_user: User,
+) -> Shoe:
+    """Core logic for shredding (destroying) cards inside a shoe.
 
-    The shoe container remains in the warehouse.  Only the cards are permanently
-    removed from inventory.  Deck pool is reduced by DECKS_PER_SHOE permanently.
-
-    Valid starting states: IN_WAREHOUSE, RETURNED.
-    Resulting status: CARDS_DESTROYED.
-
-    The shoe can later be recovered as an empty container via the
-    POST /shoes/{id}/recover-shoe endpoint (one-time only).
+    Shared by both POST /shred and the legacy POST /destroy endpoint.
     """
     shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
     if not shoe:
@@ -730,19 +833,19 @@ def destroy_cards(
         ShoeStatus.DESTROYED,
         ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE,
     ):
-        raise HTTPException(status_code=400, detail="Cards have already been destroyed for this shoe")
+        raise HTTPException(status_code=400, detail="Cards have already been shredded for this shoe")
     if shoe.status == ShoeStatus.SENT_TO_STUDIO:
         raise HTTPException(
             status_code=400,
-            detail="Cannot destroy cards while shoe is in a studio. Return it first.",
+            detail="Cannot shred cards while shoe is in a studio. Return it first.",
         )
     if shoe.status in (ShoeStatus.PHYSICALLY_DAMAGED, ShoeStatus.PHYSICALLY_DESTROYED):
         raise HTTPException(
             status_code=400,
-            detail="Cannot destroy cards on a physically damaged or destroyed shoe",
+            detail="Cannot shred cards on a physically damaged or destroyed shoe",
         )
     if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED, ShoeStatus.REFILLED):
-        raise HTTPException(status_code=400, detail="Shoe is not in a valid state for card destruction")
+        raise HTTPException(status_code=400, detail="Shoe is not in a valid state for card shredding")
 
     shoe.status = ShoeStatus.CARDS_DESTROYED
     shoe.destroyedById = current_user.id
@@ -751,14 +854,16 @@ def destroy_cards(
 
     log_action(
         db,
-        "DESTROY_CARDS",
+        "SHRED_CARDS",
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
             "color": shoe.color.value,
+            "material": shoe.material.value if shoe.material else None,
             "reason": body.reason,
-            "decksDeducted": DECKS_PER_SHOE,
+            "decksShredded": DECKS_PER_SHOE,
+            "cardsShredded": DECKS_PER_SHOE * CARDS_PER_DECK,
             "shoeRemains": True,
         },
         request=request,
@@ -766,6 +871,44 @@ def destroy_cards(
     db.commit()
     db.refresh(shoe)
     return shoe
+
+
+@router.post("/shoes/{shoe_id}/shred", response_model=ShoeOut)
+def shred_cards(
+    shoe_id: int,
+    body: DestroyShoeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Shred (permanently destroy) the cards inside a shoe container.
+
+    The physical shoe container remains in the warehouse and can be recovered.
+    Only the cards (decks) are permanently removed from inventory.
+    Deck pool is reduced by DECKS_PER_SHOE (8) permanently.
+
+    Valid starting states: IN_WAREHOUSE, RETURNED, REFILLED.
+    Resulting status: CARDS_DESTROYED.
+
+    After shredding, recover the empty shoe container via
+    POST /shoes/{id}/recover-shoe (one-time only per cycle).
+    """
+    return _shred_cards_logic(shoe_id, body, request, db, current_user)
+
+
+@router.post("/shoes/{shoe_id}/destroy", response_model=ShoeOut)
+def destroy_cards(
+    shoe_id: int,
+    body: DestroyShoeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+):
+    """Legacy alias for POST /shoes/{id}/shred — kept for backward compatibility.
+
+    Prefer using the /shred endpoint in new integrations.
+    """
+    return _shred_cards_logic(shoe_id, body, request, db, current_user)
 
 
 @router.post("/shoes/{shoe_id}/replace", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)

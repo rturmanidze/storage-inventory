@@ -529,6 +529,13 @@ class CardInventorySummary(BaseModel):
     # Shoes by material
     plasticShoes: int = 0
     paperShoes: int = 0
+    # Shredded deck metrics (deck-loads permanently removed via card shredding)
+    totalShreddedDecks: int = 0
+    totalShreddedCards: int = 0
+    shreddedBlackDecks: int = 0
+    shreddedRedDecks: int = 0
+    shreddedPlasticDecks: int = 0
+    shreddedPaperDecks: int = 0
 
 
 class DeckColorStatus(BaseModel):
@@ -643,6 +650,18 @@ class CardReportSummary(BaseModel):
     # Shoes by material
     plasticShoesCreated: int = 0
     paperShoesCreated: int = 0
+    # Shredded deck metrics (deck-loads permanently removed via card shredding)
+    totalShreddedDecks: int = 0
+    totalShreddedCards: int = 0
+    shreddedBlackDecks: int = 0
+    shreddedRedDecks: int = 0
+    shreddedBlackCards: int = 0
+    shreddedRedCards: int = 0
+    shreddedPlasticDecks: int = 0
+    shreddedPaperDecks: int = 0
+    shreddedPlasticCards: int = 0
+    shreddedPaperCards: int = 0
+    dailyShredding: List[DeckConsumptionDay] = []
     dailyConsumption: List[DeckConsumptionDay]
 
 

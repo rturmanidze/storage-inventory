@@ -30,10 +30,23 @@ interface CardReportSummary {
   shoesInWarehouse: number
   shoesSentToStudio: number
   shoesReturned: number
+  shoesCardsDestroyed: number
+  shoesPhysicallyDestroyed: number
   shoesDestroyed: number
   totalShoes: number
   plasticShoesCreated: number
   paperShoesCreated: number
+  totalShreddedDecks: number
+  totalShreddedCards: number
+  shreddedBlackDecks: number
+  shreddedRedDecks: number
+  shreddedBlackCards: number
+  shreddedRedCards: number
+  shreddedPlasticDecks: number
+  shreddedPaperDecks: number
+  shreddedPlasticCards: number
+  shreddedPaperCards: number
+  dailyShredding: DeckConsumptionDay[]
   dailyConsumption: DeckConsumptionDay[]
 }
 
@@ -135,9 +148,9 @@ export default function ReportsPage() {
                 <p className="text-xs text-gray-400 mt-0.5">shoes</p>
               </div>
               <div className="card-hover p-5">
-                <p className="section-title mb-1 text-rose-500">Destroyed</p>
-                <p className="text-2xl font-bold text-gray-900">{cardSummary.shoesDestroyed}</p>
-                <p className="text-xs text-gray-400 mt-0.5">shoes</p>
+                <p className="section-title mb-1 text-rose-500">Destroyed Shoes</p>
+                <p className="text-2xl font-bold text-gray-900">{cardSummary.shoesPhysicallyDestroyed ?? 0}</p>
+                <p className="text-xs text-gray-400 mt-0.5">physically destroyed</p>
               </div>
             </div>
 
@@ -165,6 +178,67 @@ export default function ReportsPage() {
               </div>
             </div>
 
+            {/* Shredding Summary */}
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                ✂️ Shredded Decks Summary
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="card-hover p-5 border-l-4 border-red-400">
+                  <p className="section-title mb-1 text-red-600">Total Shredded Decks</p>
+                  <p className="text-2xl font-bold text-gray-900">{cardSummary.totalShreddedDecks ?? 0}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{(cardSummary.totalShreddedCards ?? 0).toLocaleString()} cards</p>
+                </div>
+                <div className="card-hover p-5 border-l-4 border-gray-700">
+                  <p className="section-title mb-1">⬛ Shredded Black</p>
+                  <p className="text-2xl font-bold text-gray-900">{cardSummary.shreddedBlackDecks ?? 0}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{(cardSummary.shreddedBlackCards ?? 0).toLocaleString()} cards</p>
+                </div>
+                <div className="card-hover p-5 border-l-4 border-red-500">
+                  <p className="section-title mb-1 text-red-500">🟥 Shredded Red</p>
+                  <p className="text-2xl font-bold text-gray-900">{cardSummary.shreddedRedDecks ?? 0}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{(cardSummary.shreddedRedCards ?? 0).toLocaleString()} cards</p>
+                </div>
+                <div className="card-hover p-5 border-l-4 border-gray-300">
+                  <p className="section-title mb-1 text-gray-500">By Material</p>
+                  <p className="text-sm font-medium text-gray-700">🔷 {cardSummary.shreddedPlasticDecks ?? 0} plastic</p>
+                  <p className="text-sm font-medium text-gray-700">📄 {cardSummary.shreddedPaperDecks ?? 0} paper</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Shredding Trend */}
+            {(cardSummary.dailyShredding ?? []).length > 0 && (
+              <div className="card p-6 mb-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                  ✂️ Shredding Trend (last 30 days)
+                </h3>
+                <div className="flex items-end gap-[3px] h-28">
+                  {(cardSummary.dailyShredding ?? []).map((d) => {
+                    const maxShred = Math.max(...(cardSummary.dailyShredding ?? []).map(x => x.decksConsumed), 1)
+                    const heightPct = Math.max(4, (d.decksConsumed / maxShred) * 100)
+                    return (
+                      <div key={d.day} className="flex flex-col items-center flex-1 min-w-0 group">
+                        <div className="relative flex-1 flex items-end w-full">
+                          <div
+                            className="w-full rounded-t-sm bg-red-400 group-hover:bg-red-500 transition-all duration-150"
+                            style={{ height: `${heightPct}%` }}
+                            title={`${d.day}: ${d.decksConsumed} decks shredded`}
+                          />
+                        </div>
+                        <span className="text-2xs text-gray-400 mt-1.5 hidden sm:block truncate w-full text-center">
+                          {d.day.slice(5)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-red-400 inline-block" />Decks shredded</span>
+                </div>
+              </div>
+            )}
+
             {/* Shoe Lifecycle Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
               <div className="card p-4">
@@ -176,8 +250,8 @@ export default function ReportsPage() {
                 <p className="text-xl font-bold text-gray-900 mt-1">{cardSummary.shoesReturned}</p>
               </div>
               <div className="card p-4">
-                <p className="text-xs text-rose-500 font-medium uppercase tracking-wide">Destroyed</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{cardSummary.shoesDestroyed}</p>
+                <p className="text-xs text-rose-500 font-medium uppercase tracking-wide">Destroyed Shoes</p>
+                <p className="text-xl font-bold text-gray-900 mt-1">{cardSummary.shoesPhysicallyDestroyed ?? 0}</p>
               </div>
               <div className="card p-4">
                 <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Active (Total)</p>
@@ -342,7 +416,16 @@ export default function ReportsPage() {
           </button>
           <button
             className="btn-secondary"
-            onClick={() => downloadCSV('/reports/cards/shoes/csv', 'destroyed_shoes_export.csv', { status: 'DESTROYED' })}
+            onClick={() => downloadCSV('/reports/cards/shoes/csv', 'shredded_decks_export.csv', { status: 'CARDS_DESTROYED' })}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12-3-3m0 0-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            </svg>
+            Export Shredded Decks
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => downloadCSV('/reports/cards/shoes/csv', 'destroyed_shoes_export.csv', { status: 'PHYSICALLY_DESTROYED' })}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z" />

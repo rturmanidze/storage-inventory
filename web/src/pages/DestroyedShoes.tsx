@@ -140,12 +140,12 @@ export default function DestroyedShoes() {
     { value: 'ALL', label: 'All', count: allShoes.length },
     {
       value: 'CARDS_DESTROYED',
-      label: 'Cards Destroyed',
+      label: 'Shredded Decks',
       count: allShoes.filter(s => s.status === 'CARDS_DESTROYED' || s.status === 'DESTROYED').length,
     },
     {
       value: 'PHYSICALLY_DESTROYED',
-      label: 'Physically Destroyed',
+      label: 'Destroyed Shoes',
       count: allShoes.filter(s => s.status === 'PHYSICALLY_DESTROYED').length,
     },
   ]
@@ -154,9 +154,9 @@ export default function DestroyedShoes() {
     <div className="space-y-6 max-w-6xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">Destroyed Shoes</h1>
+          <h1 className="page-title">Shredded Decks & Destroyed Shoes</h1>
           <p className="page-subtitle">
-            Full record of card destructions and physically destroyed shoes — {allShoes.length} total
+            Full record of shredded card decks and physically destroyed shoe containers — {allShoes.length} total
           </p>
         </div>
         {canEdit && (
@@ -176,10 +176,10 @@ export default function DestroyedShoes() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
           </svg>
           <div className="text-sm text-amber-700">
-            <p className="font-semibold">Cards Destroyed — shoe container remains</p>
+            <p className="font-semibold">Shredded Decks — shoe container remains</p>
             <p className="mt-0.5 text-amber-600">
               Use <strong>Recover Shoe (Empty)</strong> to retrieve the physical shoe container.
-              This can only be done <strong>once</strong> per destroyed-cards record. No deck inventory increase.
+              This can only be done <strong>once</strong> per shredded-cards record. No deck inventory increase.
             </p>
           </div>
         </div>
@@ -264,9 +264,9 @@ export default function DestroyedShoes() {
                     <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
                     <td className="px-4 py-3">
                       {isCardsDestroyed ? (
-                        <span className="badge text-xs status-destroyed">Cards Destroyed</span>
+                        <span className="badge text-xs status-destroyed">✂️ Shredded</span>
                       ) : (
-                        <span className="badge text-xs status-destroyed">Physically Destroyed</span>
+                        <span className="badge text-xs status-destroyed">💥 Destroyed</span>
                       )}
                       {isCardsDestroyed && shoe.recoveredAt && (
                         <p className="text-2xs text-emerald-600 mt-0.5">

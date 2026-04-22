@@ -103,8 +103,8 @@ function StatusBadge({ status }: { status: ShoeStatus }) {
     IN_WAREHOUSE: { label: 'In Warehouse', cls: 'status-in-stock' },
     SENT_TO_STUDIO: { label: 'Sent to Studio', cls: 'status-issued' },
     RETURNED: { label: 'Returned', cls: 'status-quarantined' },
-    CARDS_DESTROYED: { label: 'Cards Destroyed', cls: 'status-destroyed' },
-    DESTROYED: { label: 'Cards Destroyed', cls: 'status-destroyed' },
+    CARDS_DESTROYED: { label: 'Shredded', cls: 'status-destroyed' },
+    DESTROYED: { label: 'Shredded', cls: 'status-destroyed' },
     EMPTY_SHOE_IN_WAREHOUSE: { label: 'Empty Shoe', cls: 'status-damaged' },
     REFILLED: { label: 'Refilled', cls: 'status-in-stock' },
     PHYSICALLY_DAMAGED: { label: 'Physically Damaged', cls: 'status-damaged' },
@@ -197,14 +197,14 @@ export default function Shoes() {
 
   const destroyCardsMutation = useMutation({
     mutationFn: ({ shoeId, reason }: { shoeId: number; reason: string }) =>
-      api.post(`/cards/shoes/${shoeId}/destroy`, { reason }),
+      api.post(`/cards/shoes/${shoeId}/shred`, { reason }),
     onSuccess: () => {
       invalidate()
-      toast.success('Cards destroyed — shoe container remains in warehouse')
+      toast.success('Cards shredded — shoe container remains in warehouse')
       setDestroyCardsModalShoe(null)
       setDestroyCardsReason('')
     },
-    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to destroy cards'),
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to shred cards'),
   })
 
   const recoverMutation = useMutation({
@@ -266,7 +266,7 @@ export default function Shoes() {
     { value: 'IN_WAREHOUSE', label: 'In Warehouse' },
     { value: 'SENT_TO_STUDIO', label: 'Sent to Studio' },
     { value: 'RETURNED', label: 'Returned' },
-    { value: 'CARDS_DESTROYED', label: 'Cards Destroyed' },
+    { value: 'CARDS_DESTROYED', label: 'Shredded' },
     { value: 'EMPTY_SHOE_IN_WAREHOUSE', label: 'Empty Shoe' },
     { value: 'REFILLED', label: 'Refilled' },
     { value: 'PHYSICALLY_DAMAGED', label: 'Physically Damaged' },
@@ -331,7 +331,7 @@ export default function Shoes() {
             <p className="text-xs text-gray-400 mt-0.5">shoes</p>
           </div>
           <div className="card p-4 text-center">
-            <p className="text-xs text-rose-500 uppercase tracking-wide font-semibold">Cards Destroyed</p>
+            <p className="text-xs text-rose-500 uppercase tracking-wide font-semibold">Shredded</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{inventory.shoesCardsDestroyed}</p>
             <p className="text-xs text-gray-400 mt-0.5">shoes</p>
           </div>
@@ -397,7 +397,7 @@ export default function Shoes() {
                   shoe.status === 'PHYSICALLY_DAMAGED' ? `Damage Reported ${shoe.physicalDamageAt ? new Date(shoe.physicalDamageAt).toLocaleString() : ''}` :
                   shoe.status === 'REFILLED' ? `Refilled ${shoe.refilledAt ? new Date(shoe.refilledAt).toLocaleString() : ''}` :
                   shoe.status === 'EMPTY_SHOE_IN_WAREHOUSE' ? `Recovered ${shoe.recoveredAt ? new Date(shoe.recoveredAt).toLocaleString() : ''}` :
-                  (shoe.status === 'CARDS_DESTROYED' || shoe.status === 'DESTROYED') ? `Cards Destroyed ${shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : ''}` :
+                  (shoe.status === 'CARDS_DESTROYED' || shoe.status === 'DESTROYED') ? `Shredded ${shoe.destroyedAt ? new Date(shoe.destroyedAt).toLocaleString() : ''}` :
                   shoe.status === 'RETURNED' ? `Returned ${shoe.returnedAt ? new Date(shoe.returnedAt).toLocaleString() : ''}` :
                   shoe.status === 'SENT_TO_STUDIO' ? `Sent ${shoe.sentAt ? new Date(shoe.sentAt).toLocaleString() : ''}` :
                   `Created ${new Date(shoe.createdAt).toLocaleString()}`
@@ -433,7 +433,7 @@ export default function Shoes() {
                     {canEdit && (
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          {/* IN_WAREHOUSE / RETURNED: send to studio + destroy cards */}
+                          {/* IN_WAREHOUSE / RETURNED: send to studio + shred cards */}
                           {(shoe.status === 'IN_WAREHOUSE' || shoe.status === 'RETURNED') && (
                             <>
                               <button
@@ -446,7 +446,7 @@ export default function Shoes() {
                                 className="btn-danger btn-sm"
                                 onClick={() => { setDestroyCardsModalShoe(shoe); setDestroyCardsReason('') }}
                               >
-                                Destroy Cards
+                                Shred Cards
                               </button>
                             </>
                           )}
@@ -485,7 +485,7 @@ export default function Shoes() {
                               </button>
                             </>
                           )}
-                          {/* REFILLED: send to studio + destroy cards */}
+                          {/* REFILLED: send to studio + shred cards */}
                           {shoe.status === 'REFILLED' && (
                             <>
                               <button
@@ -498,7 +498,7 @@ export default function Shoes() {
                                 className="btn-danger btn-sm"
                                 onClick={() => { setDestroyCardsModalShoe(shoe); setDestroyCardsReason('') }}
                               >
-                                Destroy Cards
+                                Shred Cards
                               </button>
                             </>
                           )}
@@ -731,7 +731,7 @@ export default function Shoes() {
         <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) { setDestroyCardsModalShoe(null); setDestroyCardsReason('') } }}>
           <div className="modal-content w-full max-w-sm">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-semibold text-gray-800">Destroy Cards</h2>
+              <h2 className="text-lg font-semibold text-gray-800">Shred Cards</h2>
               <button className="btn-ghost btn-sm" onClick={() => { setDestroyCardsModalShoe(null); setDestroyCardsReason('') }}>✕</button>
             </div>
             <div className="space-y-4">
@@ -739,12 +739,12 @@ export default function Shoes() {
                 Shoe <strong>#{destroyCardsModalShoe.shoeNumber}</strong> — <ColorBadge color={destroyCardsModalShoe.color} />
               </div>
               <div className="bg-rose-50 rounded-lg p-3 text-xs text-rose-700">
-                ⚠️ This permanently destroys the <strong>cards</strong> inside the shoe. The shoe container
+                ✂️ This permanently shreds the <strong>cards</strong> inside the shoe. The shoe container
                 will remain in the warehouse and can be recovered later.
                 <br /><br />8 decks ({(8 * 52).toLocaleString()} cards) will be permanently removed from inventory.
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Card Destruction <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Shredding <span className="text-red-500">*</span></label>
                 <textarea
                   value={destroyCardsReason}
                   onChange={e => setDestroyCardsReason(e.target.value)}
@@ -760,7 +760,7 @@ export default function Shoes() {
                   disabled={!destroyCardsReason.trim() || destroyCardsMutation.isPending}
                   onClick={() => destroyCardsMutation.mutate({ shoeId: destroyCardsModalShoe.id, reason: destroyCardsReason.trim() })}
                 >
-                  {destroyCardsMutation.isPending ? 'Destroying…' : 'Destroy Cards'}
+                  {destroyCardsMutation.isPending ? 'Shredding…' : 'Shred Cards'}
                 </button>
               </div>
             </div>
