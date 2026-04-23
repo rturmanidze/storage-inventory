@@ -236,7 +236,8 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         shreddedBlackDecks=shredded_black_decks,
         shreddedRedDecks=shredded_red_decks,
         shreddedPlasticDecks=shredded_plastic_decks,
-        shreddedPaperDecks=shredded_paper_decks,        totalStockDecks=total_stock_decks,
+        shreddedPaperDecks=shredded_paper_decks,
+        totalStockDecks=total_stock_decks,
         totalStockCards=total_stock_decks * CARDS_PER_DECK,
         lockedDecks=locked_decks,
     )
@@ -1164,6 +1165,8 @@ def refill_shoe(
         shoe.boxId = box.id
 
     log_action(
+        db,
+        "REFILL_SHOE",
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
