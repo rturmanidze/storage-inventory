@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_action
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import CardColor, CardMaterial, Container, DeckEntry, Role, Shoe, ShoeStatus, Studio, User
+from app.models import Box, BoxType, CardColor, CardMaterial, Container, DeckEntry, DeckNumber, Role, ShredEvent, Shoe, ShoeStatus, Studio, User
 from app.schemas import (
     AddDecksRequest,
     AddDecksResponse,
@@ -184,109 +184,20 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER).scalar() or 0
     )
 
-    # Shredded deck metrics (each card-shred event = 8 decks permanently removed)
-    # Shoes whose cards have ever been shredded (destroyedAt IS NOT NULL)
-    shredded_events_total = int(
-        db.query(func.count(Shoe.id)).filter(Shoe.destroyedAt.isnot(None)).scalar() or 0
-    )
-    # Extra shred events from refilled-then-destroyed shoes
-    extra_shred_events = int(
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE,
-                ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED,
-                ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar() or 0
-    )
-    total_shredded_events = shredded_events_total + extra_shred_events
+    # Shredded deck metrics — from dedicated ShredEvent table
+    from app.models import ShredEvent as SE  # avoid name clash
 
-    # By color
-    shredded_black_events = int(
-        db.query(func.count(Shoe.id))
-        .filter(Shoe.color == CardColor.BLACK, Shoe.destroyedAt.isnot(None))
-        .scalar() or 0
-    )
-    shredded_black_extra = int(
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.color == CardColor.BLACK,
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar() or 0
-    )
-    shredded_red_events = int(
-        db.query(func.count(Shoe.id))
-        .filter(Shoe.color == CardColor.RED, Shoe.destroyedAt.isnot(None))
-        .scalar() or 0
-    )
-    shredded_red_extra = int(
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.color == CardColor.RED,
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar() or 0
-    )
+    def _shred_sum(filters: list) -> int:
+        q = db.query(func.coalesce(func.sum(SE.decksShredded), 0))
+        for f in filters:
+            q = q.filter(f)
+        return int(q.scalar() or 0)
 
-    # By material
-    shredded_plastic_events = int(
-        db.query(func.count(Shoe.id))
-        .filter(Shoe.material == CardMaterial.PLASTIC, Shoe.destroyedAt.isnot(None))
-        .scalar() or 0
-    )
-    shredded_plastic_extra = int(
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.material == CardMaterial.PLASTIC,
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar() or 0
-    )
-    shredded_paper_events = int(
-        db.query(func.count(Shoe.id))
-        .filter(Shoe.material == CardMaterial.PAPER, Shoe.destroyedAt.isnot(None))
-        .scalar() or 0
-    )
-    shredded_paper_extra = int(
-        db.query(func.count(Shoe.id))
-        .filter(
-            Shoe.material == CardMaterial.PAPER,
-            Shoe.refilledAt.isnot(None),
-            Shoe.destroyedAt.isnot(None),
-            ~Shoe.status.in_([
-                ShoeStatus.IN_WAREHOUSE, ShoeStatus.SENT_TO_STUDIO,
-                ShoeStatus.RETURNED, ShoeStatus.REFILLED,
-            ]),
-        )
-        .scalar() or 0
-    )
-
-    total_shredded_decks = total_shredded_events * DECKS_PER_SHOE
-    shredded_black_decks = (shredded_black_events + shredded_black_extra) * DECKS_PER_SHOE
-    shredded_red_decks = (shredded_red_events + shredded_red_extra) * DECKS_PER_SHOE
-    shredded_plastic_decks = (shredded_plastic_events + shredded_plastic_extra) * DECKS_PER_SHOE
-    shredded_paper_decks = (shredded_paper_events + shredded_paper_extra) * DECKS_PER_SHOE
+    total_shredded_decks = _shred_sum([])
+    shredded_black_decks = _shred_sum([SE.color == CardColor.BLACK])
+    shredded_red_decks = _shred_sum([SE.color == CardColor.RED])
+    shredded_plastic_decks = _shred_sum([SE.material == CardMaterial.PLASTIC])
+    shredded_paper_decks = _shred_sum([SE.material == CardMaterial.PAPER])
 
     # Total physical stock across ALL non-archived containers (locked + unlocked)
     total_stock_black = _get_total_decks(db, CardColor.BLACK)
@@ -325,8 +236,7 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         shreddedBlackDecks=shredded_black_decks,
         shreddedRedDecks=shredded_red_decks,
         shreddedPlasticDecks=shredded_plastic_decks,
-        shreddedPaperDecks=shredded_paper_decks,
-        totalStockDecks=total_stock_decks,
+        shreddedPaperDecks=shredded_paper_decks,        totalStockDecks=total_stock_decks,
         totalStockCards=total_stock_decks * CARDS_PER_DECK,
         lockedDecks=locked_decks,
     )
@@ -397,7 +307,7 @@ def _build_forecast(db: Session) -> StockForecastResponse:
 
 # ── Deck Entries ──────────────────────────────────────────────────────────────
 
-CONTAINER_CAPACITY = 200  # mirrors containers.py — decks per full container
+CONTAINER_CAPACITY = 176  # 22 boxes × 8 decks per box
 
 
 def _auto_create_containers(
@@ -476,6 +386,21 @@ def _auto_create_containers(
         db.add(container)
         db.flush()
 
+        # Create 22 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
+        boxes_to_create = batch // Box.DECKS_PER_BOX
+        for _ in range(boxes_to_create):
+            box = Box(
+                color=color,
+                material=material,
+                boxType=BoxType.STANDARD,
+                containerId=container.id,
+                isConsumed=False,
+                createdById=user_id,
+                createdAt=now,
+            )
+            db.add(box)
+        db.flush()
+
         db.add(ContainerEvent(
             containerId=container.id,
             eventType=ContainerEventType.CREATED,
@@ -511,7 +436,7 @@ def add_decks(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
 ):
-    """Add decks to inventory and automatically split them into containers (max 200 per container)."""
+    """Add decks to inventory and automatically split them into containers (max 176 per container)."""
     entries, containers_created = _auto_create_containers(
         db,
         color=body.color,
@@ -639,12 +564,53 @@ def _get_available_decks_by_material(db: Session, color: CardColor, material: Ca
     return total_added - (holding_shoes + cards_destroyed_shoes + extra_refill_destructions) * DECKS_PER_SHOE
 
 
+def _consume_box_from_container(
+    db: Session,
+    color: CardColor,
+    material: CardMaterial,
+    user_id: Optional[int],
+    shoe_id: int,
+) -> Optional["Box"]:
+    """Consume one standard (non-spare) box from the oldest available container (FIFO).
+
+    Returns the consumed Box, or None if no box is available.
+    Updates the container's decksRemaining by DECKS_PER_SHOE (8).
+    """
+    box = (
+        db.query(Box)
+        .filter(
+            Box.color == color,
+            Box.material == material,
+            Box.boxType == BoxType.STANDARD,
+            Box.isConsumed.is_(False),
+            Box.containerId.isnot(None),
+        )
+        .join(Container, Box.containerId == Container.id)
+        .filter(
+            Container.isLocked.is_(False),
+            Container.archivedAt.is_(None),
+        )
+        .order_by(Container.createdAt.asc(), Box.id.asc())
+        .with_for_update(skip_locked=True)
+        .first()
+    )
+    if box is None:
+        return None
+
+    now = datetime.utcnow()
+    box.isConsumed = True
+    box.consumedAt = now
+    box.consumedByShoeId = shoe_id
+    db.flush()
+    return box
+
+
 @router.post("/shoes", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)
 def create_shoe(
     body: CreateShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
     # Enforce container lock policy before any deck deduction
     from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
@@ -686,6 +652,11 @@ def create_shoe(
             detail="Not enough decks in unlocked containers. Please unlock another container.",
         )
     shoe.containerId = container.id
+
+    # Assign a box to this shoe (if boxes are available)
+    box = _consume_box_from_container(db, body.color, body.material, current_user.id, shoe.id)
+    if box is not None:
+        shoe.boxId = box.id
 
     log_action(
         db,
@@ -744,7 +715,7 @@ def send_shoe_to_studio(
     body: SendShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.SHIFT_MANAGER, Role.SHUFFLER)),
 ):
     shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
     if not shoe:
@@ -793,7 +764,7 @@ def return_shoe_from_studio(
     shoe_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.SHIFT_MANAGER, Role.SHUFFLER)),
 ):
     """Return a shoe from a studio back to the warehouse deck pool.
 
@@ -880,6 +851,19 @@ def _shred_cards_logic(
     shoe.destroyedAt = datetime.utcnow()
     shoe.destroyReason = body.reason
 
+    # Create dedicated ShredEvent for accurate shredded-card tracking
+    shred_event = ShredEvent(
+        shoeId=shoe_id,
+        color=shoe.color,
+        material=shoe.material,
+        decksShredded=ShredEvent.DECKS_PER_SHRED,
+        cardsShredded=ShredEvent.CARDS_PER_SHRED,
+        shredById=current_user.id,
+        note=body.reason,
+        shredAt=datetime.utcnow(),
+    )
+    db.add(shred_event)
+
     log_action(
         db,
         "SHRED_CARDS",
@@ -907,7 +891,7 @@ def shred_cards(
     body: DestroyShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.SHIFT_MANAGER, Role.SHUFFLER)),
 ):
     """Shred (permanently destroy) the cards inside a shoe container.
 
@@ -930,7 +914,7 @@ def destroy_cards(
     body: DestroyShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.SHIFT_MANAGER, Role.SHUFFLER)),
 ):
     """Legacy alias for POST /shoes/{id}/shred — kept for backward compatibility.
 
@@ -1103,7 +1087,7 @@ def refill_shoe(
     body: RefillShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.SHIFT_MANAGER, Role.SHUFFLER)),
 ):
     """Refill an empty shoe container with new decks.
 
@@ -1174,9 +1158,12 @@ def refill_shoe(
         )
     shoe.containerId = container.id
 
+    # Assign a box to this shoe (if boxes are available)
+    box = _consume_box_from_container(db, body.color, body.material, current_user.id, shoe.id)
+    if box is not None:
+        shoe.boxId = box.id
+
     log_action(
-        db,
-        "REFILL_SHOE",
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
