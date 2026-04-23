@@ -972,7 +972,7 @@ def replace_shoe(
 
     # Enforce container lock policy — same rules as new shoe creation
     from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
-    validate_containers_for_consumption(db, original.color, DECKS_PER_SHOE)
+    validate_containers_for_consumption(db, original.color, DECKS_PER_SHOE, material=original.material)
 
     available = _get_available_decks(db, original.color)
     if available < DECKS_PER_SHOE:
@@ -984,6 +984,7 @@ def replace_shoe(
     new_shoe = Shoe(
         shoeNumber=original.shoeNumber,
         color=original.color,
+        material=original.material,
         status=ShoeStatus.IN_WAREHOUSE,
         createdById=current_user.id,
         createdAt=datetime.utcnow(),
@@ -1005,6 +1006,7 @@ def replace_shoe(
     # FIFO container consumption
     container = consume_decks_fifo(
         db, original.color, DECKS_PER_SHOE,
+        material=original.material,
         user_id=current_user.id,
         shoe_id=new_shoe.id,
         request=request,
@@ -1027,6 +1029,7 @@ def replace_shoe(
             "originalShoeId": shoe_id,
             "shoeNumber": new_shoe.shoeNumber,
             "color": new_shoe.color.value,
+            "material": new_shoe.material.value if new_shoe.material else None,
             "decksConsumed": DECKS_PER_SHOE,
             "sentToStudio": body.studioId,
             "containerId": container.id,
@@ -1133,19 +1136,20 @@ def refill_shoe(
 
     # Enforce container lock policy — same rules as new shoe creation
     from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
-    validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE)
+    validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE, material=body.material)
 
-    available = _get_available_decks(db, body.color)
+    available = _get_available_decks_by_material(db, body.color, body.material)
     if available < DECKS_PER_SHOE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Not enough {body.color.value} decks to refill. "
+                f"Not enough {body.color.value} {body.material.value} decks to refill. "
                 f"Available: {available}, required: {DECKS_PER_SHOE}"
             ),
         )
 
     shoe.color = body.color
+    shoe.material = body.material
     shoe.status = ShoeStatus.REFILLED
     shoe.refilledById = current_user.id
     shoe.refilledAt = datetime.utcnow()
@@ -1157,6 +1161,7 @@ def refill_shoe(
     # Deduct 8 decks from containers in FIFO order — identical logic to new shoe creation
     container = consume_decks_fifo(
         db, body.color, DECKS_PER_SHOE,
+        material=body.material,
         user_id=current_user.id,
         shoe_id=shoe.id,
         request=request,
@@ -1178,6 +1183,7 @@ def refill_shoe(
         detail={
             "shoeNumber": shoe.shoeNumber,
             "color": body.color.value,
+            "material": body.material.value,
             "decksConsumed": DECKS_PER_SHOE,
             "cardsLoaded": DECKS_PER_SHOE * CARDS_PER_DECK,
             "containerId": container.id,

@@ -584,6 +584,7 @@ class ConfirmPhysicalDestroyRequest(BaseModel):
 class RefillShoeRequest(BaseModel):
     """Refill an empty shoe container with new cards (always 8 decks)."""
     color: CardColor
+    material: CardMaterial
     studioId: Optional[int] = None  # If set, immediately sends the refilled shoe to this studio
 
 
