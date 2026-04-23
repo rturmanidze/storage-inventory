@@ -24,6 +24,9 @@ class Role(str, enum.Enum):
     ADMIN = "ADMIN"
     MANAGER = "MANAGER"
     VIEWER = "VIEWER"
+    OPERATIONS_MANAGER = "OPERATIONS_MANAGER"
+    SHIFT_MANAGER = "SHIFT_MANAGER"
+    SHUFFLER = "SHUFFLER"
 
 
 class UnitStatus(str, enum.Enum):
@@ -273,6 +276,22 @@ class CardMaterial(str, enum.Enum):
     PAPER = "PAPER"
 
 
+class DeckNumber(str, enum.Enum):
+    DECK1 = "DECK1"
+    DECK2 = "DECK2"
+    DECK3 = "DECK3"
+    DECK4 = "DECK4"
+    DECK5 = "DECK5"
+    DECK6 = "DECK6"
+    DECK7 = "DECK7"
+    DECK8 = "DECK8"
+
+
+class BoxType(str, enum.Enum):
+    STANDARD = "STANDARD"  # Contains all 8 deck groups (Deck1–Deck8)
+    SPARE = "SPARE"        # Contains only one deck type
+
+
 class ContainerEventType(str, enum.Enum):
     CREATED = "CREATED"
     LOCKED = "LOCKED"
@@ -342,7 +361,7 @@ class Container(Base):
 
     __tablename__ = "Container"
 
-    CAPACITY = 200
+    CAPACITY = 176  # 22 boxes × 8 decks = 176
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     code = Column(String, unique=True, nullable=False)  # e.g. CONTAINER-R01
@@ -363,9 +382,93 @@ class Container(Base):
     events = relationship("ContainerEvent", back_populates="container", order_by="ContainerEvent.createdAt")
     shoes = relationship("Shoe", back_populates="container")
 
+    @property
+    def boxesRemaining(self) -> int:
+        """Computed: number of whole boxes remaining in this container (1 box = 8 decks)."""
+        return self.decksRemaining // 8 if self.decksRemaining else 0
+
     __table_args__ = (
         Index("Container_color_idx", "color"),
         Index("Container_archivedAt_idx", "archivedAt"),
+    )
+
+
+class Box(Base):
+    """A box packaging unit containing exactly 8 decks.
+
+    Standard boxes contain one deck from each of Deck1–Deck8.
+    Spare boxes contain 8 decks of a single deck number.
+    Boxes are the unit transferred into containers.
+    1 container = 22 standard boxes = 176 decks.
+    """
+
+    __tablename__ = "Box"
+
+    DECKS_PER_BOX = 8
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=False)
+    boxType = Column(
+        SAEnum(BoxType, name="BoxType", create_type=False),
+        nullable=False,
+        default=BoxType.STANDARD,
+    )
+    # Only set for SPARE boxes — which single deck group this box holds
+    spareDeckNumber = Column(
+        SAEnum(DeckNumber, name="DeckNumber", create_type=False),
+        nullable=True,
+    )
+    # For standard boxes: which container holds this box (null for spare boxes)
+    containerId = Column(Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True)
+    # Set when consumed for a shoe
+    isConsumed = Column(Boolean, nullable=False, default=False)
+    consumedAt = Column(DateTime, nullable=True)
+    consumedByShoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True)
+
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    container = relationship("Container", foreign_keys=[containerId], backref="boxes")
+    consumedByShoe = relationship("Shoe", foreign_keys=[consumedByShoeId])
+    createdBy = relationship("User", foreign_keys=[createdById])
+
+    __table_args__ = (
+        Index("Box_color_idx", "color"),
+        Index("Box_containerId_idx", "containerId"),
+        Index("Box_isConsumed_idx", "isConsumed"),
+    )
+
+
+class ShredEvent(Base):
+    """Records each card-shredding event with full traceability.
+
+    Created every time POST /shoes/{id}/shred is triggered.
+    Provides dedicated shredded-deck counters independent of shoe status.
+    """
+
+    __tablename__ = "ShredEvent"
+
+    DECKS_PER_SHRED = 8
+    CARDS_PER_SHRED = 416  # 8 decks × 52 cards
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True)
+    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=True)
+    decksShredded = Column(Integer, nullable=False, default=DECKS_PER_SHRED)
+    cardsShredded = Column(Integer, nullable=False, default=CARDS_PER_SHRED)
+    shredById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    note = Column(Text, nullable=True)
+    shredAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    shoe = relationship("Shoe", foreign_keys=[shoeId])
+    shredBy = relationship("User", foreign_keys=[shredById])
+
+    __table_args__ = (
+        Index("ShredEvent_color_idx", "color"),
+        Index("ShredEvent_shredAt_idx", "shredAt"),
+        Index("ShredEvent_shoeId_idx", "shoeId"),
     )
 
 
@@ -440,6 +543,8 @@ class Shoe(Base):
 
     # Container from which this shoe's decks were sourced (FIFO consumption)
     containerId = Column(Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True)
+    # Box from which this shoe's decks were sourced
+    boxId = Column(Integer, ForeignKey("Box.id", ondelete="SET NULL"), nullable=True)
 
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
@@ -451,3 +556,4 @@ class Shoe(Base):
     physicallyDestroyedBy = relationship("User", foreign_keys=[physicallyDestroyedById])
     refilledBy = relationship("User", foreign_keys=[refilledById])
     container = relationship("Container", back_populates="shoes", foreign_keys=[containerId])
+    box = relationship("Box", foreign_keys=[boxId])

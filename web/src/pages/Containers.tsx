@@ -35,7 +35,9 @@ interface ContainerInfo {
   events: ContainerEvent[]
 }
 
-const CAPACITY = 200
+const CAPACITY = 176
+const BOXES_PER_CONTAINER = 22
+const DECKS_PER_BOX = 8
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -98,8 +100,8 @@ type ContainerForm = z.infer<typeof schema>
 export default function Containers() {
   const { user } = useAuth()
   const qc = useQueryClient()
-  const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER'
-  const isAdmin = user?.role === 'ADMIN'
+  const canManage = ['ADMIN', 'MANAGER', 'OPERATIONS_MANAGER', 'SHIFT_MANAGER'].includes(user?.role ?? '')
+  const canLockUnlock = ['ADMIN', 'MANAGER', 'OPERATIONS_MANAGER', 'SHIFT_MANAGER'].includes(user?.role ?? '')
 
   const [createOpen, setCreateOpen] = useState(false)
   const [detailContainer, setDetailContainer] = useState<ContainerInfo | null>(null)
@@ -215,7 +217,7 @@ export default function Containers() {
         <div>
           <h1 className="page-title">Containers</h1>
           <p className="page-subtitle">
-            FIFO deck container management — each container holds {CAPACITY} decks
+            FIFO deck container management — each container holds {BOXES_PER_CONTAINER} boxes × {DECKS_PER_BOX} decks = {CAPACITY} decks
           </p>
         </div>
         {canManage && (
@@ -245,7 +247,23 @@ export default function Containers() {
         <div className="card p-4 text-center">
           <p className="text-xs text-indigo-500 uppercase font-semibold tracking-wide">Decks Available</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">{totalRemaining}</p>
-          <p className="text-xs text-gray-400 mt-0.5">across active containers</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            ≈{Math.floor(totalRemaining / DECKS_PER_BOX)} boxes
+          </p>
+        </div>
+      </div>
+
+      {/* Hierarchy info */}
+      <div className="card p-4 bg-indigo-50 border border-indigo-100">
+        <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">📦 Deck Hierarchy</p>
+        <div className="flex items-center gap-2 text-sm text-indigo-800 flex-wrap">
+          <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">Deck1–Deck8</span>
+          <span className="text-indigo-400">→</span>
+          <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Box = 8 decks</span>
+          <span className="text-indigo-400">→</span>
+          <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Container = 22 boxes = 176 decks</span>
+          <span className="text-indigo-400">→</span>
+          <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Shoe = 1 box (8 decks)</span>
         </div>
       </div>
 
@@ -343,7 +361,7 @@ export default function Containers() {
                           ✏️ Rename
                         </button>
                       )}
-                      {isAdmin && !c.archivedAt && !c.isLocked && (
+                      {canLockUnlock && !c.archivedAt && !c.isLocked && (
                         <button
                           className="btn-secondary btn-sm"
                           onClick={() => lockMutation.mutate(c.id)}
@@ -352,7 +370,7 @@ export default function Containers() {
                           Lock
                         </button>
                       )}
-                      {isAdmin && !c.archivedAt && c.isLocked && (
+                      {canLockUnlock && !c.archivedAt && c.isLocked && (
                         <button
                           className="btn-ghost btn-sm"
                           onClick={() => unlockMutation.mutate(c.id)}
@@ -435,7 +453,7 @@ export default function Containers() {
               </div>
 
               <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-600">
-                <strong>Capacity:</strong> {CAPACITY} decks &nbsp;·&nbsp;
+                <strong>Capacity:</strong> {BOXES_PER_CONTAINER} boxes × {DECKS_PER_BOX} decks = {CAPACITY} decks &nbsp;·&nbsp;
                 <strong>Cards:</strong> {(CAPACITY * 52).toLocaleString()} cards total
               </div>
 
@@ -511,7 +529,7 @@ export default function Containers() {
             </div>
 
             {/* Admin actions */}
-            {isAdmin && !detailContainer.archivedAt && (
+            {canLockUnlock && !detailContainer.archivedAt && (
               <div className="flex gap-2 mb-4 shrink-0">
                 {!detailContainer.isLocked ? (
                   <button

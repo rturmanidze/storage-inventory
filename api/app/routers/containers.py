@@ -24,7 +24,7 @@ from app.schemas import ContainerCreate, ContainerOut, ContainerRenameRequest
 
 router = APIRouter(prefix="/containers", tags=["containers"])
 
-CONTAINER_CAPACITY = 200  # Fixed deck capacity per container
+CONTAINER_CAPACITY = 176  # Fixed deck capacity per container
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -213,9 +213,9 @@ def create_container(
     body: ContainerCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
-    """Create a new deck container (200 decks, fixed capacity)."""
+    """Create a new deck container (176 decks, fixed capacity)."""
     # Ensure code is unique
     existing = db.query(Container).filter(Container.code == body.code).first()
     if existing:
@@ -311,7 +311,7 @@ def lock_container(
     container_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
     """Manually lock a container (Admin only)."""
     container = _get_container_or_404(db, container_id)
@@ -342,7 +342,7 @@ def unlock_container(
     container_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
     """Manually unlock a container (Admin only).  Does not un-archive it."""
     container = _get_container_or_404(db, container_id)

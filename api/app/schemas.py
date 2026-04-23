@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import CardColor, CardMaterial, ContainerEventType, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
+from app.models import BoxType, CardColor, CardMaterial, ContainerEventType, DeckNumber, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
 
 
 # ── Shared config ──────────────────────────────────────────────────────────────
@@ -454,6 +454,39 @@ class ContainerRenameRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
+class BoxOut(OrmBase):
+    id: int
+    color: CardColor
+    material: CardMaterial
+    boxType: BoxType
+    spareDeckNumber: Optional[DeckNumber] = None
+    containerId: Optional[int] = None
+    isConsumed: bool
+    consumedAt: Optional[datetime] = None
+    consumedByShoeId: Optional[int] = None
+    createdById: Optional[int] = None
+    createdAt: datetime
+
+
+class SpareBoxCreate(BaseModel):
+    color: CardColor
+    material: CardMaterial
+    spareDeckNumber: DeckNumber
+    note: Optional[str] = None
+
+
+class ShredEventOut(OrmBase):
+    id: int
+    shoeId: Optional[int] = None
+    color: CardColor
+    material: Optional[CardMaterial] = None
+    decksShredded: int
+    cardsShredded: int
+    shredById: Optional[int] = None
+    note: Optional[str] = None
+    shredAt: datetime
+
+
 class CreateShoeRequest(BaseModel):
     color: CardColor
     material: CardMaterial
@@ -472,6 +505,7 @@ class ShoeOut(OrmBase):
     status: ShoeStatus
     studioId: Optional[int] = None
     containerId: Optional[int] = None
+    boxId: Optional[int] = None
     createdById: Optional[int] = None
     sentById: Optional[int] = None
     returnedById: Optional[int] = None
@@ -584,6 +618,7 @@ class ConfirmPhysicalDestroyRequest(BaseModel):
 class RefillShoeRequest(BaseModel):
     """Refill an empty shoe container with new cards (always 8 decks)."""
     color: CardColor
+    material: CardMaterial
     studioId: Optional[int] = None  # If set, immediately sends the refilled shoe to this studio
 
 
@@ -714,3 +749,4 @@ class ContainerOut(OrmBase):
     archivedAt: Optional[datetime] = None
     createdBy: Optional[ContainerUserOut] = None
     events: List[ContainerEventOut] = []
+    boxesRemaining: int = 0

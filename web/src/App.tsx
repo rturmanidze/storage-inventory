@@ -23,6 +23,7 @@ import Shoes from './pages/Shoes'
 import DestroyedShoes from './pages/DestroyedShoes'
 import Backups from './pages/Backups'
 import Containers from './pages/Containers'
+import Boxes from './pages/Boxes'
 import { useAuth } from './contexts/AuthContext'
 
 function AppWithProviders() {
@@ -53,6 +54,7 @@ function AppWithProviders() {
               <Route path="/shoes" element={<Shoes />} />
               <Route path="/shoes/destroyed" element={<DestroyedShoes />} />
               <Route path="/containers" element={<Containers />} />
+              <Route path="/boxes" element={<Boxes />} />
               {isAdmin && <Route path="/backups" element={<Backups />} />}
             </Route>
           </Route>
