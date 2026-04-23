@@ -17,6 +17,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0011_boxes_and_rbac"
 down_revision: Union[str, None] = "0010_shoe_number_string"
@@ -53,8 +54,8 @@ def upgrade() -> None:
     op.create_table(
         "Box",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("color", sa.Enum(name="CardColor", create_type=False), nullable=False),
-        sa.Column("material", sa.Enum(name="CardMaterial", create_type=False), nullable=False),
+        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
+        sa.Column("material", postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False), nullable=False),
         sa.Column(
             "boxType",
             sa.Enum(name="BoxType", create_type=False),
@@ -78,8 +79,8 @@ def upgrade() -> None:
         "ShredEvent",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("shoeId", sa.Integer(), sa.ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("color", sa.Enum(name="CardColor", create_type=False), nullable=False),
-        sa.Column("material", sa.Enum(name="CardMaterial", create_type=False), nullable=True),
+        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
+        sa.Column("material", postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False), nullable=True),
         sa.Column("decksShredded", sa.Integer(), nullable=False, server_default="8"),
         sa.Column("cardsShredded", sa.Integer(), nullable=False, server_default="416"),
         sa.Column("shredById", sa.Integer(), sa.ForeignKey("User.id", ondelete="SET NULL"), nullable=True),
