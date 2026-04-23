@@ -14,14 +14,20 @@ interface NavItem {
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrator',
-  MANAGER: 'Shift Manager',
-  VIEWER: 'Operations Manager',
+  MANAGER: 'Manager (legacy)',
+  VIEWER: 'Viewer (legacy)',
+  OPERATIONS_MANAGER: 'Operations Manager',
+  SHIFT_MANAGER: 'Shift Manager',
+  SHUFFLER: 'Shuffler',
 }
 
 const ROLE_BADGE_COLORS: Record<string, string> = {
   ADMIN: 'bg-red-100 text-red-700',
   MANAGER: 'bg-blue-100 text-blue-700',
   VIEWER: 'bg-emerald-100 text-emerald-700',
+  OPERATIONS_MANAGER: 'bg-purple-100 text-purple-700',
+  SHIFT_MANAGER: 'bg-amber-100 text-amber-700',
+  SHUFFLER: 'bg-sky-100 text-sky-700',
 }
 
 /* ── SVG Icons (20×20) ─────────────────────────────── */
@@ -148,6 +154,7 @@ const navItems: NavItem[] = [
 
   { label: 'Studios', to: '/studios', icon: icons.studio, group: 'Card Operations' },
   { label: 'Deck Inventory', to: '/decks', icon: icons.decks, group: 'Card Operations' },
+  { label: 'Boxes', to: '/boxes', icon: icons.inventory, group: 'Card Operations' },
   { label: 'Containers', to: '/containers', icon: icons.container, group: 'Card Operations' },
   { label: 'Shoes', to: '/shoes', icon: icons.shoes, group: 'Card Operations' },
   { label: 'Destroyed Shoes', to: '/shoes/destroyed', icon: icons.destroyedShoes, group: 'Card Operations' },
@@ -168,7 +175,7 @@ export default function Layout() {
 
   const visibleNav = navItems.filter(item => {
     if (item.adminOnly) return user?.role === 'ADMIN'
-    if (item.managerOrAdmin) return user?.role === 'ADMIN' || user?.role === 'MANAGER'
+    if (item.managerOrAdmin) return ['ADMIN', 'MANAGER', 'OPERATIONS_MANAGER'].includes(user?.role ?? '')
     return true
   })
 

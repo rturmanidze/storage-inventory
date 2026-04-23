@@ -382,6 +382,11 @@ class Container(Base):
     events = relationship("ContainerEvent", back_populates="container", order_by="ContainerEvent.createdAt")
     shoes = relationship("Shoe", back_populates="container")
 
+    @property
+    def boxesRemaining(self) -> int:
+        """Computed: number of whole boxes remaining in this container (1 box = 8 decks)."""
+        return self.decksRemaining // 8 if self.decksRemaining else 0
+
     __table_args__ = (
         Index("Container_color_idx", "color"),
         Index("Container_archivedAt_idx", "archivedAt"),

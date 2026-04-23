@@ -7,13 +7,25 @@ import toast from 'react-hot-toast'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 
-const ROLES = ['ADMIN', 'MANAGER', 'VIEWER'] as const
+const ROLES = ['ADMIN', 'MANAGER', 'VIEWER', 'OPERATIONS_MANAGER', 'SHIFT_MANAGER', 'SHUFFLER'] as const
 type Role = (typeof ROLES)[number]
 
 const ROLE_LABELS: Record<Role, string> = {
   ADMIN: 'Administrator',
-  MANAGER: 'Shift Manager',
-  VIEWER: 'Operations Manager',
+  MANAGER: 'Manager (legacy)',
+  VIEWER: 'Viewer (legacy)',
+  OPERATIONS_MANAGER: 'Operations Manager',
+  SHIFT_MANAGER: 'Shift Manager',
+  SHUFFLER: 'Shuffler',
+}
+
+const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  ADMIN: 'Full access including backups and user management',
+  MANAGER: 'Legacy manager role',
+  VIEWER: 'Legacy viewer role',
+  OPERATIONS_MANAGER: 'Full access except backups and user credentials',
+  SHIFT_MANAGER: 'Create shoes, open/close containers, shred cards, refill, send to studio',
+  SHUFFLER: 'Shred cards, refill shoes, send/return shoes to/from studio',
 }
 
 interface UserRecord {
@@ -199,13 +211,20 @@ export default function Users() {
                         className={`badge ${
                           u.role === 'ADMIN'
                             ? 'bg-red-100 text-red-800'
+                            : u.role === 'OPERATIONS_MANAGER'
+                            ? 'bg-purple-100 text-purple-800'
+                            : u.role === 'SHIFT_MANAGER'
+                            ? 'bg-amber-100 text-amber-800'
+                            : u.role === 'SHUFFLER'
+                            ? 'bg-sky-100 text-sky-800'
                             : u.role === 'MANAGER'
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-gray-100 text-gray-700'
                         }`}
                       >
-                        {ROLE_LABELS[u.role]}
+                        {ROLE_LABELS[u.role as Role] ?? u.role}
                       </span>
+                      <p className="text-2xs text-gray-400 mt-0.5">{ROLE_DESCRIPTIONS[u.role as Role] ?? ''}</p>
                     </td>
                     <td className="table-cell hidden md:table-cell text-gray-500 text-xs">
                       {new Date(u.createdAt).toLocaleDateString()}
