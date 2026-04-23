@@ -31,7 +31,6 @@ def upgrade() -> None:
     bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
     bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
     bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
-    bind.execute(sa.text("BEGIN"))
 
     # ── New enum types ─────────────────────────────────────────────────────────
     op.execute(sa.text("""

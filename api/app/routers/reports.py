@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import AuditLog, CardColor, CardMaterial, Container, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, User
+from app.models import AuditLog, CardColor, CardMaterial, Container, DeckEntry, Movement, MovementLine, Role, SerializedUnit, Shoe, ShoeStatus, ShredEvent, User
 from app.schemas import CardReportSummary, DashboardStats, DeckConsumptionDay
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -302,55 +302,31 @@ def _get_total_decks_report(db: Session) -> int:
     )
 
 
-_HOLDING_STATUSES = [
-    ShoeStatus.IN_WAREHOUSE,
-    ShoeStatus.SENT_TO_STUDIO,
-    ShoeStatus.RETURNED,
-    ShoeStatus.REFILLED,
-]
-
-
 def _compute_shredded_metrics(db: Session) -> dict:
-    """Compute deck shredding metrics (total, by color, by material).
+    """Compute deck shredding metrics (total, by color, by material) from ShredEvent table.
 
-    Each card-shred event permanently removes DECKS_PER_SHOE (8) decks.
-    Accounts for both first-cycle destructions and re-destructions after refill.
+    Each ShredEvent row represents one shred action that permanently removed
+    decksShredded (always 8) decks and cardsShredded (always 416) cards.
+    Using ShredEvent directly ensures consistency with the inventory summary.
     """
-    def _extra(filters: list) -> int:
-        return int(
-            db.query(func.count(Shoe.id))
-            .filter(
-                *filters,
-                Shoe.refilledAt.isnot(None),
-                Shoe.destroyedAt.isnot(None),
-                ~Shoe.status.in_(_HOLDING_STATUSES),
-            )
-            .scalar() or 0
-        )
+    def _shred_decks(filters: list) -> int:
+        q = db.query(func.coalesce(func.sum(ShredEvent.decksShredded), 0))
+        for f in filters:
+            q = q.filter(f)
+        return int(q.scalar() or 0)
 
-    # Total
-    base_total = int(db.query(func.count(Shoe.id)).filter(Shoe.destroyedAt.isnot(None)).scalar() or 0)
-    extra_total = _extra([])
-    total_events = base_total + extra_total
-
-    # By color
-    base_black = int(db.query(func.count(Shoe.id)).filter(Shoe.color == CardColor.BLACK, Shoe.destroyedAt.isnot(None)).scalar() or 0)
-    extra_black = _extra([Shoe.color == CardColor.BLACK])
-    base_red = int(db.query(func.count(Shoe.id)).filter(Shoe.color == CardColor.RED, Shoe.destroyedAt.isnot(None)).scalar() or 0)
-    extra_red = _extra([Shoe.color == CardColor.RED])
-
-    # By material
-    base_plastic = int(db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PLASTIC, Shoe.destroyedAt.isnot(None)).scalar() or 0)
-    extra_plastic = _extra([Shoe.material == CardMaterial.PLASTIC])
-    base_paper = int(db.query(func.count(Shoe.id)).filter(Shoe.material == CardMaterial.PAPER, Shoe.destroyedAt.isnot(None)).scalar() or 0)
-    extra_paper = _extra([Shoe.material == CardMaterial.PAPER])
+    total_decks = _shred_decks([])
+    black_decks = _shred_decks([ShredEvent.color == CardColor.BLACK])
+    red_decks = _shred_decks([ShredEvent.color == CardColor.RED])
+    plastic_decks = _shred_decks([ShredEvent.material == CardMaterial.PLASTIC])
+    paper_decks = _shred_decks([ShredEvent.material == CardMaterial.PAPER])
 
     return {
-        "totalEvents": total_events,
-        "blackEvents": base_black + extra_black,
-        "redEvents": base_red + extra_red,
-        "plasticEvents": base_plastic + extra_plastic,
-        "paperEvents": base_paper + extra_paper,
+        "totalDecks": total_decks,
+        "blackDecks": black_decks,
+        "redDecks": red_decks,
+        "plasticDecks": plastic_decks,
+        "paperDecks": paper_decks,
     }
 
 
@@ -405,11 +381,11 @@ def get_card_report_summary(
 
     # Shredded deck metrics
     shred = _compute_shredded_metrics(db)
-    total_shredded_decks = shred["totalEvents"] * DECKS_PER_SHOE
-    shredded_black_decks = shred["blackEvents"] * DECKS_PER_SHOE
-    shredded_red_decks = shred["redEvents"] * DECKS_PER_SHOE
-    shredded_plastic_decks = shred["plasticEvents"] * DECKS_PER_SHOE
-    shredded_paper_decks = shred["paperEvents"] * DECKS_PER_SHOE
+    total_shredded_decks = shred["totalDecks"]
+    shredded_black_decks = shred["blackDecks"]
+    shredded_red_decks = shred["redDecks"]
+    shredded_plastic_decks = shred["plasticDecks"]
+    shredded_paper_decks = shred["paperDecks"]
 
     # Daily deck consumption over last 30 days (decks consumed = shoes created * 8 - shoes returned * 8)
     cutoff = datetime.utcnow() - timedelta(days=30)
@@ -457,13 +433,13 @@ def get_card_report_summary(
         for day, vals in sorted(daily.items())
     ]
 
-    # Daily shredding trend over last 30 days
+    # Daily shredding trend over last 30 days — from ShredEvent for accurate tracking
     shredded_rows = (
         db.query(
-            func.date_trunc("day", Shoe.destroyedAt).label("day"),
-            func.count(Shoe.id).label("shoes_shredded"),
+            func.date_trunc("day", ShredEvent.shredAt).label("day"),
+            func.coalesce(func.sum(ShredEvent.decksShredded), 0).label("decks_shredded"),
         )
-        .filter(Shoe.destroyedAt >= cutoff)
+        .filter(ShredEvent.shredAt >= cutoff)
         .group_by("day")
         .order_by("day")
         .all()
@@ -472,8 +448,8 @@ def get_card_report_summary(
         DeckConsumptionDay(
             day=row.day.date().isoformat(),
             shoesCreated=0,
-            shoesReturned=int(row.shoes_shredded),
-            decksConsumed=int(row.shoes_shredded) * DECKS_PER_SHOE,
+            shoesReturned=0,
+            decksConsumed=int(row.decks_shredded),
         )
         for row in shredded_rows
     ]
@@ -531,28 +507,27 @@ def get_shredded_decks_report(
 ):
     """Summary of permanently shredded decks, broken down by color and material."""
     shred = _compute_shredded_metrics(db)
-    total_decks = shred["totalEvents"] * DECKS_PER_SHOE
     return {
-        "totalShreddedDecks": total_decks,
-        "totalShreddedCards": total_decks * CARDS_PER_DECK,
+        "totalShreddedDecks": shred["totalDecks"],
+        "totalShreddedCards": shred["totalDecks"] * CARDS_PER_DECK,
         "byColor": {
             "BLACK": {
-                "decks": shred["blackEvents"] * DECKS_PER_SHOE,
-                "cards": shred["blackEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+                "decks": shred["blackDecks"],
+                "cards": shred["blackDecks"] * CARDS_PER_DECK,
             },
             "RED": {
-                "decks": shred["redEvents"] * DECKS_PER_SHOE,
-                "cards": shred["redEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+                "decks": shred["redDecks"],
+                "cards": shred["redDecks"] * CARDS_PER_DECK,
             },
         },
         "byMaterial": {
             "PLASTIC": {
-                "decks": shred["plasticEvents"] * DECKS_PER_SHOE,
-                "cards": shred["plasticEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+                "decks": shred["plasticDecks"],
+                "cards": shred["plasticDecks"] * CARDS_PER_DECK,
             },
             "PAPER": {
-                "decks": shred["paperEvents"] * DECKS_PER_SHOE,
-                "cards": shred["paperEvents"] * DECKS_PER_SHOE * CARDS_PER_DECK,
+                "decks": shred["paperDecks"],
+                "cards": shred["paperDecks"] * CARDS_PER_DECK,
             },
         },
     }

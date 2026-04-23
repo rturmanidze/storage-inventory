@@ -435,7 +435,7 @@ def add_decks(
     body: AddDecksRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER)),
 ):
     """Add decks to inventory and automatically split them into containers (max 176 per container)."""
     entries, containers_created = _auto_create_containers(
@@ -930,7 +930,7 @@ def replace_shoe(
     body: ReplaceShoeRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER)),
 ):
     """Replace a physically-destroyed shoe with a new one sharing the same display number.
 
@@ -1031,7 +1031,7 @@ def recover_shoe(
     shoe_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER)),
 ):
     """Recover the physical shoe container after its cards have been destroyed.
 
@@ -1217,7 +1217,7 @@ def report_physical_damage(
     body: ReportPhysicalDamageRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
     """Report a shoe as physically damaged.
 
@@ -1295,7 +1295,7 @@ def confirm_physical_destroy(
     shoe_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER)),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
     """Confirm physical destruction of a damaged shoe (irreversible).
 
