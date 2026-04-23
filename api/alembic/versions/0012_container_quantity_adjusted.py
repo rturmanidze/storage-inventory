@@ -21,11 +21,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ALTER TYPE ADD VALUE must run outside a transaction
-    bind = op.get_bind()
-    bind.execute(sa.text("COMMIT"))
-    bind.execute(sa.text(
-        "ALTER TYPE \"ContainerEventType\" ADD VALUE IF NOT EXISTS 'QUANTITY_ADJUSTED'"
-    ))
+    with op.get_context().autocommit_block():
+        op.execute(sa.text(
+            "ALTER TYPE \"ContainerEventType\" ADD VALUE IF NOT EXISTS 'QUANTITY_ADJUSTED'"
+        ))
 
 
 def downgrade() -> None:
