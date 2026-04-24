@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 interface ContainerEvent {
   id: number
   containerId: number
-  eventType: 'CREATED' | 'LOCKED' | 'UNLOCKED' | 'DECK_CONSUMED' | 'ARCHIVED'
+  eventType: 'CREATED' | 'LOCKED' | 'UNLOCKED' | 'DECK_CONSUMED' | 'ARCHIVED' | 'QUANTITY_ADJUSTED'
   decksConsumed: number | null
   shoeId: number | null
   note: string | null
@@ -35,8 +35,8 @@ interface ContainerInfo {
   events: ContainerEvent[]
 }
 
-const CAPACITY = 176
-const BOXES_PER_CONTAINER = 22
+const CAPACITY = 192
+const BOXES_PER_CONTAINER = 24
 const DECKS_PER_BOX = 8
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -76,13 +76,14 @@ function StatusBadge({ c }: { c: ContainerInfo }) {
 
 function EventTypeBadge({ type }: { type: ContainerEvent['eventType'] }) {
   const map: Record<ContainerEvent['eventType'], string> = {
-    CREATED:       'bg-indigo-100 text-indigo-700',
-    LOCKED:        'bg-blue-100 text-blue-700',
-    UNLOCKED:      'bg-emerald-100 text-emerald-700',
-    DECK_CONSUMED: 'bg-amber-100 text-amber-700',
-    ARCHIVED:      'bg-gray-100 text-gray-500',
+    CREATED:           'bg-indigo-100 text-indigo-700',
+    LOCKED:            'bg-blue-100 text-blue-700',
+    UNLOCKED:          'bg-emerald-100 text-emerald-700',
+    DECK_CONSUMED:     'bg-amber-100 text-amber-700',
+    ARCHIVED:          'bg-gray-100 text-gray-500',
+    QUANTITY_ADJUSTED: 'bg-purple-100 text-purple-700',
   }
-  return <span className={`badge text-xs ${map[type]}`}>{type.replace('_', ' ')}</span>
+  return <span className={`badge text-xs ${map[type]}`}>{type.replace(/_/g, ' ')}</span>
 }
 
 // ── Schema ────────────────────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ export default function Containers() {
   const qc = useQueryClient()
   const canManage = ['ADMIN', 'MANAGER', 'OPERATIONS_MANAGER', 'SHIFT_MANAGER'].includes(user?.role ?? '')
   const canLockUnlock = ['ADMIN', 'MANAGER', 'OPERATIONS_MANAGER', 'SHIFT_MANAGER'].includes(user?.role ?? '')
+  const isAdmin = user?.role === 'ADMIN'
 
   const [createOpen, setCreateOpen] = useState(false)
   const [detailContainer, setDetailContainer] = useState<ContainerInfo | null>(null)
@@ -109,6 +111,9 @@ export default function Containers() {
   const [renameCode, setRenameCode] = useState('')
   const [colorFilter, setColorFilter] = useState<'ALL' | 'BLACK' | 'RED'>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'LOCKED' | 'ARCHIVED'>('ALL')
+  const [adjustContainer, setAdjustContainer] = useState<ContainerInfo | null>(null)
+  const [adjustDecks, setAdjustDecks] = useState('')
+  const [adjustReason, setAdjustReason] = useState('')
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -197,6 +202,23 @@ export default function Containers() {
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Rename failed'),
   })
 
+  const adjustMutation = useMutation({
+    mutationFn: ({ id, decks, reason }: { id: number; decks: number; reason?: string }) =>
+      api.patch(`/containers/${id}/quantity`, { decks, reason: reason || undefined }),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['containers'] })
+      qc.invalidateQueries({ queryKey: ['card-inventory'] })
+      toast.success('Container quantity updated')
+      setAdjustContainer(null)
+      setAdjustDecks('')
+      setAdjustReason('')
+      if (detailContainer?.id === id) {
+        api.get(`/containers/${id}`).then(r => setDetailContainer(r.data))
+      }
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Adjustment failed'),
+  })
+
   function openDetail(c: ContainerInfo) {
     // Fetch fresh detail with events
     api.get(`/containers/${c.id}`).then(r => setDetailContainer(r.data))
@@ -261,7 +283,7 @@ export default function Containers() {
           <span className="text-indigo-400">→</span>
           <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Box = 8 decks</span>
           <span className="text-indigo-400">→</span>
-          <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Container = 22 boxes = 176 decks</span>
+          <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Container = 24 boxes = 192 decks</span>
           <span className="text-indigo-400">→</span>
           <span className="bg-white border border-indigo-200 rounded px-2 py-1 text-xs font-mono">1 Shoe = 1 box (8 decks)</span>
         </div>
@@ -558,6 +580,14 @@ export default function Containers() {
                 >
                   ✏️ Rename Container
                 </button>
+                {isAdmin && !detailContainer.archivedAt && (
+                  <button
+                    className="btn-ghost btn-sm text-purple-700 border-purple-200 hover:bg-purple-50"
+                    onClick={() => { setAdjustContainer(detailContainer); setAdjustDecks(String(detailContainer.decksRemaining)); setAdjustReason('') }}
+                  >
+                    🔢 Edit Quantity
+                  </button>
+                )}
               </div>
             )}
 
@@ -641,6 +671,82 @@ export default function Containers() {
                   onClick={() => renameMutation.mutate({ id: renameContainer.id, code: renameCode.trim() })}
                 >
                   {renameMutation.isPending ? 'Saving…' : 'Save Name'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Quantity Modal (Admin only) */}
+      {adjustContainer && (
+        <div
+          className="modal-overlay"
+          onClick={e => { if (e.target === e.currentTarget) { setAdjustContainer(null); setAdjustDecks(''); setAdjustReason('') } }}
+        >
+          <div className="modal-content w-full max-w-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Edit Container Quantity</h2>
+              <button className="btn-ghost btn-sm" onClick={() => { setAdjustContainer(null); setAdjustDecks(''); setAdjustReason('') }}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-purple-50 rounded-lg p-3 text-xs text-purple-700 border border-purple-100">
+                <p className="font-semibold mb-1">⚠️ Admin Only — Audit Logged</p>
+                <p>Container: <span className="font-mono font-semibold">{adjustContainer.code}</span></p>
+                <p className="mt-1">Current: <strong>{adjustContainer.decksRemaining}</strong> / {CAPACITY} decks ({pct(adjustContainer.decksRemaining)}% full)</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Deck Count</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={CAPACITY}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  value={adjustDecks}
+                  onChange={e => setAdjustDecks(e.target.value)}
+                  autoFocus
+                />
+                <p className="text-xs text-gray-400 mt-1">Must be between 0 and {CAPACITY}. Current: {adjustContainer.decksRemaining}</p>
+                {adjustDecks !== '' && Number(adjustDecks) !== adjustContainer.decksRemaining && (
+                  <p className={`text-xs mt-1 font-medium ${Number(adjustDecks) > adjustContainer.decksRemaining ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    Delta: {Number(adjustDecks) > adjustContainer.decksRemaining ? '+' : ''}{Number(adjustDecks) - adjustContainer.decksRemaining} decks
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason <span className="text-gray-400 font-normal">(recommended)</span></label>
+                <input
+                  type="text"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder="e.g. Physical recount, found 8 missing decks"
+                  value={adjustReason}
+                  onChange={e => setAdjustReason(e.target.value)}
+                  maxLength={500}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  className="btn-ghost flex-1"
+                  onClick={() => { setAdjustContainer(null); setAdjustDecks(''); setAdjustReason('') }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary flex-1 bg-purple-600 hover:bg-purple-700"
+                  disabled={
+                    adjustDecks === '' ||
+                    isNaN(Number(adjustDecks)) ||
+                    Number(adjustDecks) < 0 ||
+                    Number(adjustDecks) > CAPACITY ||
+                    Number(adjustDecks) === adjustContainer.decksRemaining ||
+                    adjustMutation.isPending
+                  }
+                  onClick={() => adjustMutation.mutate({ id: adjustContainer.id, decks: Number(adjustDecks), reason: adjustReason })}
+                >
+                  {adjustMutation.isPending ? 'Saving…' : 'Apply Adjustment'}
                 </button>
               </div>
             </div>

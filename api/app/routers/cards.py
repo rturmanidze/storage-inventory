@@ -308,7 +308,7 @@ def _build_forecast(db: Session) -> StockForecastResponse:
 
 # ── Deck Entries ──────────────────────────────────────────────────────────────
 
-CONTAINER_CAPACITY = 176  # 22 boxes × 8 decks per box
+CONTAINER_CAPACITY = 192  # 24 boxes × 8 decks per box
 
 
 def _auto_create_containers(
@@ -387,7 +387,7 @@ def _auto_create_containers(
         db.add(container)
         db.flush()
 
-        # Create 22 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
+        # Create up to 24 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
         boxes_to_create = batch // Box.DECKS_PER_BOX
         for _ in range(boxes_to_create):
             box = Box(
