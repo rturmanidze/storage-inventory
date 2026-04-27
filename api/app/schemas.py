@@ -454,11 +454,6 @@ class ContainerRenameRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
-class ContainerQuantityAdjust(BaseModel):
-    decks: int = Field(ge=0, le=192, description="New deck count (0–192)")
-    reason: Optional[str] = Field(default=None, max_length=500, description="Optional reason for the adjustment")
-
-
 class BoxOut(OrmBase):
     id: int
     color: CardColor
