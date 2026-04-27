@@ -25,13 +25,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # CREATE TYPE inside a DO $$ EXCEPTION WHEN duplicate_object $$ block works
-    # fine inside a transaction, so no COMMIT is needed here.
-
-    conn = op.get_bind()
+    # PostgreSQL requires ALTER TYPE … ADD VALUE to run outside a transaction.
+    bind = op.get_bind()
+    bind.execute(sa.text("COMMIT"))
 
     # CardColor was created in migration 0003; guard makes this migration idempotent.
-    conn.execute(sa.text(
+    bind.execute(sa.text(
         "DO $$ BEGIN "
         "  CREATE TYPE \"CardColor\" AS ENUM ('BLACK', 'RED'); "
         "EXCEPTION WHEN duplicate_object THEN NULL; "
@@ -39,7 +38,7 @@ def upgrade() -> None:
     ))
 
     # New enum: CardMaterial
-    conn.execute(sa.text(
+    bind.execute(sa.text(
         "DO $$ BEGIN "
         "  CREATE TYPE \"CardMaterial\" AS ENUM ('PLASTIC', 'PAPER'); "
         "EXCEPTION WHEN duplicate_object THEN NULL; "
@@ -47,7 +46,7 @@ def upgrade() -> None:
     ))
 
     # New enum: ContainerEventType
-    conn.execute(sa.text(
+    bind.execute(sa.text(
         "DO $$ BEGIN "
         "  CREATE TYPE \"ContainerEventType\" AS ENUM "
         "  ('CREATED', 'LOCKED', 'UNLOCKED', 'DECK_CONSUMED', 'ARCHIVED'); "

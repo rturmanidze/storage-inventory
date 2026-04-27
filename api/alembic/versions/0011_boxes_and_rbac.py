@@ -27,10 +27,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── New Role values — must run outside a transaction ──────────────────────
-    with op.get_context().autocommit_block():
-        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
-        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
-        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
+    bind = op.get_bind()
+    bind.execute(sa.text("COMMIT"))
+    bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
+    bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
+    bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
 
     # ── New enum types ─────────────────────────────────────────────────────────
     op.execute(sa.text("""
@@ -57,11 +58,19 @@ def upgrade() -> None:
         sa.Column("material", postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False), nullable=False),
         sa.Column(
             "boxType",
-            sa.Enum(name="BoxType", create_type=False),
+            postgresql.ENUM("STANDARD", "SPARE", name="BoxType", create_type=False),
             nullable=False,
             server_default="STANDARD",
         ),
-        sa.Column("spareDeckNumber", sa.Enum(name="DeckNumber", create_type=False), nullable=True),
+        sa.Column(
+            "spareDeckNumber",
+            postgresql.ENUM(
+                "DECK1", "DECK2", "DECK3", "DECK4", "DECK5", "DECK6", "DECK7", "DECK8",
+                name="DeckNumber",
+                create_type=False,
+            ),
+            nullable=True,
+        ),
         sa.Column("containerId", sa.Integer(), sa.ForeignKey("Container.id", ondelete="SET NULL"), nullable=True),
         sa.Column("isConsumed", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("consumedAt", sa.DateTime(), nullable=True),

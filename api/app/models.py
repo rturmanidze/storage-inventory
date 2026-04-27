@@ -298,7 +298,6 @@ class ContainerEventType(str, enum.Enum):
     UNLOCKED = "UNLOCKED"
     DECK_CONSUMED = "DECK_CONSUMED"
     ARCHIVED = "ARCHIVED"
-    QUANTITY_ADJUSTED = "QUANTITY_ADJUSTED"
 
 
 class ShoeStatus(str, enum.Enum):
@@ -354,16 +353,15 @@ class DeckEntry(Base):
 
 
 class Container(Base):
-    """A physical deck container holding up to CONTAINER_CAPACITY decks.
+    """A physical deck container holding exactly CONTAINER_CAPACITY decks.
 
     Containers are the sole storage mechanism for unshod decks.
     Shoe creation consumes from the oldest non-empty container first (FIFO).
-    Partial containers (fewer than max capacity) are fully supported.
     """
 
     __tablename__ = "Container"
 
-    CAPACITY = 192  # 24 boxes × 8 decks = 192
+    CAPACITY = 176  # 22 boxes × 8 decks = 176
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     code = Column(String, unique=True, nullable=False)  # e.g. CONTAINER-R01
@@ -401,7 +399,7 @@ class Box(Base):
     Standard boxes contain one deck from each of Deck1–Deck8.
     Spare boxes contain 8 decks of a single deck number.
     Boxes are the unit transferred into containers.
-    1 container = 24 standard boxes = 192 decks (max capacity).
+    1 container = 22 standard boxes = 176 decks.
     """
 
     __tablename__ = "Box"

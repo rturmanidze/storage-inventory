@@ -20,11 +20,11 @@ from app.auth import get_current_user, require_roles
 from app.database import get_db
 from app.models import CardColor, CardMaterial, Container, ContainerEvent, ContainerEventType, DeckEntry, Role, User
 from app.routers.cards import CARDS_PER_DECK
-from app.schemas import ContainerCreate, ContainerOut, ContainerQuantityAdjust, ContainerRenameRequest
+from app.schemas import ContainerCreate, ContainerOut, ContainerRenameRequest
 
 router = APIRouter(prefix="/containers", tags=["containers"])
 
-CONTAINER_CAPACITY = 192  # 24 boxes × 8 decks = 192
+CONTAINER_CAPACITY = 176  # Fixed deck capacity per container
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ def create_container(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
-    """Create a new deck container (192 decks max capacity, partial fill supported)."""
+    """Create a new deck container (176 decks, fixed capacity)."""
     # Ensure code is unique
     existing = db.query(Container).filter(Container.code == body.code).first()
     if existing:
@@ -396,85 +396,6 @@ def rename_container(
         db, "RENAME_CONTAINER", user_id=current_user.id,
         resource_type="container", resource_id=container_id,
         detail={"oldCode": old_code, "newCode": body.code},
-        request=request,
-    )
-    db.commit()
-    db.refresh(container)
-    return container
-
-
-@router.patch("/{container_id}/quantity", response_model=ContainerOut)
-def adjust_container_quantity(
-    container_id: int,
-    body: ContainerQuantityAdjust,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN)),
-):
-    """Manually adjust the deck count of a container (Admin only).
-
-    Used for physical recount corrections and inventory reconciliation.
-    All changes are fully audit-logged with old value, new value, and optional reason.
-    - Max decks per container: 192 (24 boxes × 8 decks)
-    - Archived containers cannot be adjusted.
-    """
-    container = _get_container_or_404(db, container_id)
-
-    if container.archivedAt is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot adjust quantity of an archived container",
-        )
-
-    if body.decks < 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Deck count cannot be negative",
-        )
-    if body.decks > CONTAINER_CAPACITY:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Deck count cannot exceed container capacity of {CONTAINER_CAPACITY}",
-        )
-
-    old_decks = container.decksRemaining
-    new_decks = body.decks
-
-    if old_decks == new_decks:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New quantity is the same as the current value — no change made",
-        )
-
-    container.decksRemaining = new_decks
-
-    # If adjusted to zero, archive the container
-    if new_decks == 0:
-        container.archivedAt = datetime.utcnow()
-        _add_event(db, container, ContainerEventType.ARCHIVED, user_id=current_user.id,
-                   note="Container archived after manual quantity set to 0")
-
-    note = f"Manual quantity adjustment: {old_decks} → {new_decks} decks"
-    if body.reason:
-        note += f" | Reason: {body.reason}"
-
-    _add_event(
-        db, container, ContainerEventType.QUANTITY_ADJUSTED,
-        user_id=current_user.id,
-        decks_consumed=old_decks - new_decks if old_decks > new_decks else None,
-        note=note,
-    )
-
-    log_action(
-        db, "ADJUST_CONTAINER_QUANTITY", user_id=current_user.id,
-        resource_type="container", resource_id=container_id,
-        detail={
-            "code": container.code,
-            "oldDecks": old_decks,
-            "newDecks": new_decks,
-            "delta": new_decks - old_decks,
-            "reason": body.reason,
-        },
         request=request,
     )
     db.commit()
