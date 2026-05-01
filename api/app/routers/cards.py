@@ -533,23 +533,26 @@ def _generate_barcode(db: Session, color: CardColor) -> str:
 
     # Collect all existing sequence numbers for the same parity
     rows = db.query(Shoe.barcode).filter(Shoe.barcode.like(f"{_BARCODE_PREFIX}%")).all()
-    taken: set = set()
+    used_sequence_numbers: set = set()
     for (bc,) in rows:
         if bc:
             try:
                 n = int(bc[len(_BARCODE_PREFIX):])
                 if (n % 2 == 1) == is_odd:
-                    taken.add(n)
+                    used_sequence_numbers.add(n)
             except (ValueError, IndexError):
                 pass
 
     n = start
-    while n in taken:
+    while n in used_sequence_numbers:
         n += 2
         if n > 9999:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Barcode sequence exhausted for {color.value} shoes (max sequence: 9999)",
+                detail=(
+                    f"Barcode sequence exhausted for {color.value} shoes "
+                    f"(max 4999 per color). Contact your system administrator."
+                ),
             )
     return f"{_BARCODE_PREFIX}{n:04d}"
 
