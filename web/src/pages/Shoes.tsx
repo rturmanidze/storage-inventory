@@ -57,6 +57,7 @@ interface Shoe {
   refilledBy: { id: number; username: string } | null
   physicalDamageBy: { id: number; username: string } | null
   physicallyDestroyedBy: { id: number; username: string } | null
+  shredEvents: Array<{ id: number; shredAt: string; decksShredded: number }> 
 }
 
 interface CardInventory {
@@ -419,6 +420,11 @@ export default function Shoes() {
                     <td className="px-4 py-3">
                       <div>
                         <StatusBadge status={shoe.status} />
+                        {(shoe.shredEvents ?? []).length > 0 && (
+                          <p className="text-2xs text-rose-500 mt-0.5">
+                            ✂️ {(shoe.shredEvents ?? []).length} shred cycle{(shoe.shredEvents ?? []).length !== 1 ? 's' : ''}
+                          </p>
+                        )}
                         {isCardsDestroyed && shoe.destroyReason && (
                           <p className="text-2xs text-gray-400 mt-0.5 max-w-[160px] truncate" title={shoe.destroyReason}>
                             {shoe.destroyReason}
@@ -466,7 +472,7 @@ export default function Shoes() {
                               Return
                             </button>
                           )}
-                          {/* CARDS_DESTROYED: recover empty shoe (one-time) */}
+                          {/* CARDS_DESTROYED: recover empty shoe container */}
                           {isCardsDestroyed && (
                             <button
                               className="btn-secondary btn-sm"

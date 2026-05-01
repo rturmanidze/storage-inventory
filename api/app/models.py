@@ -464,7 +464,7 @@ class ShredEvent(Base):
     note = Column(Text, nullable=True)
     shredAt = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    shoe = relationship("Shoe", foreign_keys=[shoeId])
+    shoe = relationship("Shoe", foreign_keys=[shoeId], back_populates="shredEvents")
     shredBy = relationship("User", foreign_keys=[shredById])
 
     __table_args__ = (
@@ -562,3 +562,9 @@ class Shoe(Base):
     refilledBy = relationship("User", foreign_keys=[refilledById])
     container = relationship("Container", back_populates="shoes", foreign_keys=[containerId])
     box = relationship("Box", foreign_keys=[boxId])
+    shredEvents = relationship(
+        "ShredEvent",
+        back_populates="shoe",
+        foreign_keys="ShredEvent.shoeId",
+        order_by="ShredEvent.shredAt",
+    )

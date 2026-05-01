@@ -489,6 +489,7 @@ class ShredEventOut(OrmBase):
     decksShredded: int
     cardsShredded: int
     shredById: Optional[int] = None
+    shredBy: Optional[MovementCreatedByOut] = None
     note: Optional[str] = None
     shredAt: datetime
 
@@ -540,6 +541,7 @@ class ShoeOut(OrmBase):
     physicalDamageBy: Optional[MovementCreatedByOut] = None
     physicallyDestroyedBy: Optional[MovementCreatedByOut] = None
     refilledBy: Optional[MovementCreatedByOut] = None
+    shredEvents: List[ShredEventOut] = []
 
 
 class CardInventorySummary(BaseModel):
