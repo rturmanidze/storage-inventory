@@ -301,6 +301,13 @@ class ContainerEventType(str, enum.Enum):
     QUANTITY_ADJUSTED = "QUANTITY_ADJUSTED"
 
 
+class CuttingCardEventType(str, enum.Enum):
+    CREATED = "CREATED"
+    DEDUCTED = "DEDUCTED"        # 2 cards deducted for a new shoe
+    REPLACED = "REPLACED"       # cutting cards replaced in an existing shoe
+    QUANTITY_ADJUSTED = "QUANTITY_ADJUSTED"  # admin manual correction
+
+
 class ShoeStatus(str, enum.Enum):
     IN_WAREHOUSE = "IN_WAREHOUSE"
     SENT_TO_STUDIO = "SENT_TO_STUDIO"
@@ -354,11 +361,13 @@ class DeckEntry(Base):
 
 
 class Container(Base):
-    """A physical deck container holding up to CONTAINER_CAPACITY decks.
+    """A physical deck container holding decks of a single deck type (DECK1–DECK8).
 
-    Containers are the sole storage mechanism for unshod decks.
-    Shoe creation consumes from the oldest non-empty container first (FIFO).
-    Partial containers (fewer than max capacity) are fully supported.
+    Each container must be assigned exactly one deckType to enable the
+    8-container shoe assembly workflow.  The legacy ``deckType=None`` state
+    is preserved for containers created before this feature was introduced.
+
+    Shoe creation consumes 1 deck from one container per deck type (FIFO).
     """
 
     __tablename__ = "Container"
@@ -372,6 +381,11 @@ class Container(Base):
         SAEnum(CardMaterial, name="CardMaterial", create_type=False),
         nullable=False,
     )
+    # Which single deck type this container holds (nullable for legacy containers)
+    deckType = Column(
+        SAEnum(DeckNumber, name="DeckNumber", create_type=False),
+        nullable=True,
+    )
     decksRemaining = Column(Integer, nullable=False, default=CAPACITY)
     isLocked = Column(Boolean, nullable=False, default=False)
     createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
@@ -383,6 +397,7 @@ class Container(Base):
     createdBy = relationship("User", foreign_keys=[createdById])
     events = relationship("ContainerEvent", back_populates="container", order_by="ContainerEvent.createdAt")
     shoes = relationship("Shoe", back_populates="container")
+    shoeLinks = relationship("ShoeContainerLink", back_populates="container")
 
     @property
     def boxesRemaining(self) -> int:
@@ -392,6 +407,7 @@ class Container(Base):
     __table_args__ = (
         Index("Container_color_idx", "color"),
         Index("Container_archivedAt_idx", "archivedAt"),
+        Index("Container_deckType_idx", "deckType"),
     )
 
 
@@ -496,6 +512,63 @@ class ContainerEvent(Base):
     user = relationship("User", foreign_keys=[userId])
 
 
+class CuttingCardContainer(Base):
+    """A container holding cutting cards.
+
+    Cutting cards are separate from playing card decks.  Each shoe assembly
+    deducts exactly 2 cutting cards from an available cutting card container.
+    Admins manually set the initial card count and can adjust it later.
+    """
+
+    __tablename__ = "CuttingCardContainer"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String, unique=True, nullable=False)
+    totalCards = Column(Integer, nullable=False)
+    availableCards = Column(Integer, nullable=False)
+    isLocked = Column(Boolean, nullable=False, default=False)
+    createdById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+    lockedAt = Column(DateTime, nullable=True)
+    unlockedAt = Column(DateTime, nullable=True)
+    archivedAt = Column(DateTime, nullable=True)  # set when fully depleted
+
+    createdBy = relationship("User", foreign_keys=[createdById])
+    events = relationship(
+        "CuttingCardEvent",
+        back_populates="container",
+        order_by="CuttingCardEvent.createdAt",
+    )
+
+    __table_args__ = (
+        Index("CuttingCardContainer_archivedAt_idx", "archivedAt"),
+    )
+
+
+class CuttingCardEvent(Base):
+    """Audit trail for cutting card container changes."""
+
+    __tablename__ = "CuttingCardEvent"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    containerId = Column(
+        Integer, ForeignKey("CuttingCardContainer.id", ondelete="CASCADE"), nullable=False
+    )
+    eventType = Column(
+        SAEnum(CuttingCardEventType, name="CuttingCardEventType", create_type=True),
+        nullable=False,
+    )
+    cardsChanged = Column(Integer, nullable=True)  # positive=added, negative=deducted
+    shoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True)
+    userId = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
+    note = Column(Text, nullable=True)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    container = relationship("CuttingCardContainer", back_populates="events")
+    shoe = relationship("Shoe", foreign_keys=[shoeId])
+    user = relationship("User", foreign_keys=[userId])
+
+
 class Shoe(Base):
     """A shoe assembled from 8 decks of the same color.
 
@@ -546,10 +619,14 @@ class Shoe(Base):
     refilledAt = Column(DateTime, nullable=True)
     refilledById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
 
-    # Container from which this shoe's decks were sourced (FIFO consumption)
+    # Container from which this shoe's decks were sourced (FIFO consumption, legacy)
     containerId = Column(Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True)
     # Box from which this shoe's decks were sourced
     boxId = Column(Integer, ForeignKey("Box.id", ondelete="SET NULL"), nullable=True)
+    # Cutting card container from which cutting cards were deducted
+    cuttingCardContainerId = Column(
+        Integer, ForeignKey("CuttingCardContainer.id", ondelete="SET NULL"), nullable=True
+    )
 
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
@@ -562,9 +639,46 @@ class Shoe(Base):
     refilledBy = relationship("User", foreign_keys=[refilledById])
     container = relationship("Container", back_populates="shoes", foreign_keys=[containerId])
     box = relationship("Box", foreign_keys=[boxId])
+    cuttingCardContainer = relationship(
+        "CuttingCardContainer", foreign_keys=[cuttingCardContainerId]
+    )
     shredEvents = relationship(
         "ShredEvent",
         back_populates="shoe",
         foreign_keys="ShredEvent.shoeId",
         order_by="ShredEvent.shredAt",
+    )
+    containerLinks = relationship(
+        "ShoeContainerLink",
+        back_populates="shoe",
+        order_by="ShoeContainerLink.deckType",
+    )
+
+
+class ShoeContainerLink(Base):
+    """Records which container provided each deck type for a shoe assembly.
+
+    One row per deck type (DECK1–DECK8) per shoe.  This enables full
+    traceability of the 8-container assembly workflow.
+    """
+
+    __tablename__ = "ShoeContainerLink"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="CASCADE"), nullable=False)
+    containerId = Column(
+        Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True
+    )
+    deckType = Column(
+        SAEnum(DeckNumber, name="DeckNumber", create_type=False), nullable=False
+    )
+    decksConsumed = Column(Integer, nullable=False, default=1)
+    createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    shoe = relationship("Shoe", back_populates="containerLinks")
+    container = relationship("Container", back_populates="shoeLinks")
+
+    __table_args__ = (
+        UniqueConstraint("shoeId", "deckType", name="ShoeContainerLink_shoeId_deckType_key"),
+        Index("ShoeContainerLink_shoeId_idx", "shoeId"),
     )

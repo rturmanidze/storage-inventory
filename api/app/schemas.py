@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import BoxType, CardColor, CardMaterial, ContainerEventType, DeckNumber, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
+from app.models import BoxType, CardColor, CardMaterial, ContainerEventType, CuttingCardEventType, DeckNumber, IssuedToType, MovementType, Role, ShoeStatus, UnitStatus
 
 
 # ── Shared config ──────────────────────────────────────────────────────────────
@@ -504,6 +504,15 @@ class SendShoeRequest(BaseModel):
     studioId: int
 
 
+class ShoeContainerLinkOut(OrmBase):
+    id: int
+    shoeId: int
+    containerId: Optional[int] = None
+    deckType: DeckNumber
+    decksConsumed: int
+    createdAt: datetime
+
+
 class ShoeOut(OrmBase):
     id: int
     shoeNumber: str
@@ -514,6 +523,7 @@ class ShoeOut(OrmBase):
     studioId: Optional[int] = None
     containerId: Optional[int] = None
     boxId: Optional[int] = None
+    cuttingCardContainerId: Optional[int] = None
     createdById: Optional[int] = None
     sentById: Optional[int] = None
     returnedById: Optional[int] = None
@@ -542,6 +552,7 @@ class ShoeOut(OrmBase):
     physicallyDestroyedBy: Optional[MovementCreatedByOut] = None
     refilledBy: Optional[MovementCreatedByOut] = None
     shredEvents: List[ShredEventOut] = []
+    containerLinks: List[ShoeContainerLinkOut] = []
 
 
 class CardInventorySummary(BaseModel):
@@ -725,6 +736,8 @@ class ContainerCreate(BaseModel):
     code: str = Field(min_length=1, max_length=64)
     color: CardColor
     material: CardMaterial
+    # deckType is required for new containers; omit only when creating legacy containers
+    deckType: Optional[DeckNumber] = None
 
 
 class ContainerUserOut(OrmBase):
@@ -749,6 +762,7 @@ class ContainerOut(OrmBase):
     code: str
     color: CardColor
     material: CardMaterial
+    deckType: Optional[DeckNumber] = None
     decksRemaining: int
     isLocked: bool
     createdById: Optional[int] = None
@@ -759,3 +773,62 @@ class ContainerOut(OrmBase):
     createdBy: Optional[ContainerUserOut] = None
     events: List[ContainerEventOut] = []
     boxesRemaining: int = 0
+
+
+# ── Cutting Card Container ─────────────────────────────────────────────────────
+
+class CuttingCardContainerCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    totalCards: int = Field(gt=0)
+
+
+class CuttingCardEventOut(OrmBase):
+    id: int
+    containerId: int
+    eventType: CuttingCardEventType
+    cardsChanged: Optional[int] = None
+    shoeId: Optional[int] = None
+    userId: Optional[int] = None
+    note: Optional[str] = None
+    createdAt: datetime
+    user: Optional[ContainerUserOut] = None
+
+
+class CuttingCardContainerOut(OrmBase):
+    id: int
+    code: str
+    totalCards: int
+    availableCards: int
+    isLocked: bool
+    createdById: Optional[int] = None
+    createdAt: datetime
+    lockedAt: Optional[datetime] = None
+    unlockedAt: Optional[datetime] = None
+    archivedAt: Optional[datetime] = None
+    createdBy: Optional[ContainerUserOut] = None
+    events: List[CuttingCardEventOut] = []
+
+
+class CuttingCardContainerQuantityAdjust(BaseModel):
+    availableCards: int = Field(ge=0, description="New available card count (≥ 0)")
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class ReplaceCuttingCardsRequest(BaseModel):
+    cuttingCardContainerId: int
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class DeckTypeAvailability(BaseModel):
+    deckType: DeckNumber
+    available: bool
+    containersAvailable: int
+    decksAvailable: int
+
+
+class ShoeAssemblyAvailability(BaseModel):
+    """Pre-flight check result for 8-container shoe assembly."""
+    canCreate: bool
+    deckAvailability: List[DeckTypeAvailability]
+    cuttingCardsAvailable: int
+    missingDeckTypes: List[DeckNumber]
