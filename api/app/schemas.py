@@ -418,6 +418,7 @@ class StudioOut(OrmBase):
     description: Optional[str] = None
     createdAt: datetime
     updatedAt: datetime
+    shoeCount: int = 0
 
 
 # ── Card Inventory ────────────────────────────────────────────────────────────
@@ -495,7 +496,7 @@ class ShredEventOut(OrmBase):
 class CreateShoeRequest(BaseModel):
     color: CardColor
     material: CardMaterial
-    shoeNumber: str = Field(min_length=1, max_length=32)
+    # shoeNumber is now auto-generated from the barcode sequence; omit from request
 
 
 class SendShoeRequest(BaseModel):
@@ -505,6 +506,7 @@ class SendShoeRequest(BaseModel):
 class ShoeOut(OrmBase):
     id: int
     shoeNumber: str
+    barcode: Optional[str] = None
     color: CardColor
     material: Optional[CardMaterial] = None
     status: ShoeStatus

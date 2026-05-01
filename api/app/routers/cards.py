@@ -515,6 +515,45 @@ def get_low_stock(
 
 # ── Shoes ─────────────────────────────────────────────────────────────────────
 
+# Barcode prefix: Country(01) + City(01) + GameType(01)
+_BARCODE_PREFIX = "010101"
+
+
+def _generate_barcode(db: Session, color: CardColor) -> str:
+    """Generate the next unique barcode following odd(BLACK)/even(RED) parity rule.
+
+    Format: 010101NNNN where NNNN is a 4-digit zero-padded sequence number.
+    - BLACK shoes: NNNN must be ODD  (0001, 0003, 0005, …)
+    - RED shoes:   NNNN must be EVEN (0002, 0004, 0006, …)
+
+    Sequences are independent per parity so they always increment by 2.
+    """
+    is_odd = color == CardColor.BLACK
+    start = 1 if is_odd else 2
+
+    # Collect all existing sequence numbers for the same parity
+    rows = db.query(Shoe.barcode).filter(Shoe.barcode.like(f"{_BARCODE_PREFIX}%")).all()
+    taken: set = set()
+    for (bc,) in rows:
+        if bc:
+            try:
+                n = int(bc[len(_BARCODE_PREFIX):])
+                if (n % 2 == 1) == is_odd:
+                    taken.add(n)
+            except (ValueError, IndexError):
+                pass
+
+    n = start
+    while n in taken:
+        n += 2
+        if n > 9999:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Barcode sequence exhausted for {color.value} shoes (max sequence: 9999)",
+            )
+    return f"{_BARCODE_PREFIX}{n:04d}"
+
+
 def _get_available_decks_by_material(db: Session, color: CardColor, material: CardMaterial) -> int:
     """Available decks for a specific color+material combination."""
     total_added = int(
@@ -627,8 +666,14 @@ def create_shoe(
                 f"Available: {available}, required: {DECKS_PER_SHOE}"
             ),
         )
+
+    # Auto-generate barcode and derive shoeNumber from it
+    barcode = _generate_barcode(db, body.color)
+    shoe_number = str(int(barcode[len(_BARCODE_PREFIX):]))
+
     shoe = Shoe(
-        shoeNumber=body.shoeNumber,
+        shoeNumber=shoe_number,
+        barcode=barcode,
         color=body.color,
         material=body.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -670,6 +715,7 @@ def create_shoe(
             "material": body.material.value,
             "decksConsumed": DECKS_PER_SHOE,
             "shoeNumber": shoe.shoeNumber,
+            "barcode": shoe.barcode,
             "containerId": container.id,
             "containerCode": container.code,
         },
@@ -968,6 +1014,7 @@ def replace_shoe(
 
     new_shoe = Shoe(
         shoeNumber=original.shoeNumber,
+        barcode=_generate_barcode(db, original.color),
         color=original.color,
         material=original.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -1013,6 +1060,7 @@ def replace_shoe(
         detail={
             "originalShoeId": shoe_id,
             "shoeNumber": new_shoe.shoeNumber,
+            "barcode": new_shoe.barcode,
             "color": new_shoe.color.value,
             "material": new_shoe.material.value if new_shoe.material else None,
             "decksConsumed": DECKS_PER_SHOE,

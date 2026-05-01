@@ -508,6 +508,9 @@ class Shoe(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     shoeNumber = Column(String, nullable=False, default="0")
+    # Auto-generated unique barcode: format 010101NNNN
+    # NNNN is ODD for BLACK shoes, EVEN for RED shoes
+    barcode = Column(String(32), unique=True, nullable=True)
     color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
     material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=True)
     status = Column(
