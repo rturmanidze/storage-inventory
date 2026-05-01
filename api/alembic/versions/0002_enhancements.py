@@ -9,7 +9,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 revision: str = "0002_enhancements"
 down_revision: Union[str, None] = "0001_initial"
@@ -18,17 +17,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block
-    # (on all versions prior to 12, and for maximum portability).  Commit the
-    # Alembic-managed transaction, run ADD VALUE in autocommit mode, then let
-    # subsequent DDL start a new implicit transaction via SQLAlchemy 2.0 autobegin.
-    bind = op.get_bind()
-    bind.execute(sa.text("COMMIT"))
-
-    # Extend UnitStatus enum with new values
-    bind.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DAMAGED'"))
-    bind.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'EXPIRED'"))
-    bind.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'"))
+    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block.
+    # Use autocommit_block() so Alembic properly tracks the transaction lifecycle
+    # instead of a raw COMMIT which can leave alembic_version in an inconsistent state.
+    with op.get_context().autocommit_block():
+        op.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DAMAGED'"))
+        op.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'EXPIRED'"))
+        op.execute(sa.text("ALTER TYPE \"UnitStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'"))
 
     # --- AuditLog ---
     op.create_table(
