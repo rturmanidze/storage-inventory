@@ -27,11 +27,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── New Role values — must run outside a transaction ──────────────────────
-    bind = op.get_bind()
-    bind.execute(sa.text("COMMIT"))
-    bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
-    bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
-    bind.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
+    with op.get_context().autocommit_block():
+        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
+        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
+        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
 
     # ── New enum types ─────────────────────────────────────────────────────────
     op.execute(sa.text("""
