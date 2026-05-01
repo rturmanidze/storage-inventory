@@ -418,7 +418,6 @@ class StudioOut(OrmBase):
     description: Optional[str] = None
     createdAt: datetime
     updatedAt: datetime
-    shoeCount: int = 0
 
 
 # ── Card Inventory ────────────────────────────────────────────────────────────
@@ -455,11 +454,6 @@ class ContainerRenameRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
 
 
-class ContainerQuantityAdjust(BaseModel):
-    decks: int = Field(ge=0, le=192, description="New deck count (0–192)")
-    reason: Optional[str] = Field(default=None, max_length=500, description="Optional reason for the adjustment")
-
-
 class BoxOut(OrmBase):
     id: int
     color: CardColor
@@ -489,7 +483,6 @@ class ShredEventOut(OrmBase):
     decksShredded: int
     cardsShredded: int
     shredById: Optional[int] = None
-    shredBy: Optional[MovementCreatedByOut] = None
     note: Optional[str] = None
     shredAt: datetime
 
@@ -497,7 +490,7 @@ class ShredEventOut(OrmBase):
 class CreateShoeRequest(BaseModel):
     color: CardColor
     material: CardMaterial
-    # shoeNumber is now auto-generated from the barcode sequence; omit from request
+    shoeNumber: str = Field(min_length=1, max_length=32)
 
 
 class SendShoeRequest(BaseModel):
@@ -507,7 +500,6 @@ class SendShoeRequest(BaseModel):
 class ShoeOut(OrmBase):
     id: int
     shoeNumber: str
-    barcode: Optional[str] = None
     color: CardColor
     material: Optional[CardMaterial] = None
     status: ShoeStatus
@@ -541,7 +533,6 @@ class ShoeOut(OrmBase):
     physicalDamageBy: Optional[MovementCreatedByOut] = None
     physicallyDestroyedBy: Optional[MovementCreatedByOut] = None
     refilledBy: Optional[MovementCreatedByOut] = None
-    shredEvents: List[ShredEventOut] = []
 
 
 class CardInventorySummary(BaseModel):

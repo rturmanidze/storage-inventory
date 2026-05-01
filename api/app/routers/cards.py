@@ -26,7 +26,6 @@ from app.schemas import (
     ReturnShoeRequest,
     SendShoeRequest,
     ShoeOut,
-    ShredEventOut,
     StockForecastColor,
     StockForecastResponse,
 )
@@ -309,7 +308,7 @@ def _build_forecast(db: Session) -> StockForecastResponse:
 
 # ── Deck Entries ──────────────────────────────────────────────────────────────
 
-CONTAINER_CAPACITY = 192  # 24 boxes × 8 decks per box
+CONTAINER_CAPACITY = 176  # 22 boxes × 8 decks per box
 
 
 def _auto_create_containers(
@@ -388,7 +387,7 @@ def _auto_create_containers(
         db.add(container)
         db.flush()
 
-        # Create up to 24 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
+        # Create 22 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
         boxes_to_create = batch // Box.DECKS_PER_BOX
         for _ in range(boxes_to_create):
             box = Box(
@@ -516,78 +515,8 @@ def get_low_stock(
 
 # ── Shoes ─────────────────────────────────────────────────────────────────────
 
-# Barcode prefix: Country(01) + City(01) + GameType(01)
-_BARCODE_PREFIX = "010101"
-
-
-def _generate_barcode(db: Session, color: CardColor) -> str:
-    """Generate the next unique barcode following odd(BLACK)/even(RED) parity rule.
-
-    Format: 010101NNNN where NNNN is a 4-digit zero-padded sequence number.
-    - BLACK shoes: NNNN must be ODD  (0001, 0003, 0005, …)
-    - RED shoes:   NNNN must be EVEN (0002, 0004, 0006, …)
-
-    Sequences are independent per parity so they always increment by 2.
-    """
-    is_odd = color == CardColor.BLACK
-    start = 1 if is_odd else 2
-
-    # Collect all existing sequence numbers for the same parity
-    rows = db.query(Shoe.barcode).filter(Shoe.barcode.like(f"{_BARCODE_PREFIX}%")).all()
-    used_sequence_numbers: set = set()
-    for (bc,) in rows:
-        if bc:
-            try:
-                n = int(bc[len(_BARCODE_PREFIX):])
-                if (n % 2 == 1) == is_odd:
-                    used_sequence_numbers.add(n)
-            except (ValueError, IndexError):
-                pass
-
-    n = start
-    while n in used_sequence_numbers:
-        n += 2
-        if n > 9999:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=(
-                    f"Barcode sequence exhausted for {color.value} shoes "
-                    f"(max 4999 per color). Contact your system administrator."
-                ),
-            )
-    return f"{_BARCODE_PREFIX}{n:04d}"
-
-
 def _get_available_decks_by_material(db: Session, color: CardColor, material: CardMaterial) -> int:
-    """Available decks for a specific color+material combination.
-
-    Uses container-based counting when containers exist — this is always accurate
-    even for shoes that have been refilled multiple times.  Falls back to the
-    legacy DeckEntry formula when no containers exist (pre-container deployments).
-    """
-    any_containers = int(
-        db.query(func.count(Container.id))
-        .filter(
-            Container.color == color,
-            Container.material == material,
-            Container.archivedAt.is_(None),
-        )
-        .scalar() or 0
-    )
-    if any_containers > 0:
-        return int(
-            db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
-            .filter(
-                Container.color == color,
-                Container.material == material,
-                Container.archivedAt.is_(None),
-                Container.isLocked.is_(False),
-            )
-            .scalar()
-            or 0
-        )
-
-    # Legacy fallback: no containers — use DeckEntry-based formula
+    """Available decks for a specific color+material combination."""
     total_added = int(
         db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
         .filter(DeckEntry.color == color, DeckEntry.material == material)
@@ -615,6 +544,7 @@ def _get_available_decks_by_material(db: Session, color: CardColor, material: Ca
         .scalar()
         or 0
     )
+    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
     extra_refill_destructions = int(
         db.query(func.count(Shoe.id))
         .filter(
@@ -697,14 +627,8 @@ def create_shoe(
                 f"Available: {available}, required: {DECKS_PER_SHOE}"
             ),
         )
-
-    # Auto-generate barcode and derive shoeNumber from it
-    barcode = _generate_barcode(db, body.color)
-    shoe_number = str(int(barcode[len(_BARCODE_PREFIX):]))
-
     shoe = Shoe(
-        shoeNumber=shoe_number,
-        barcode=barcode,
+        shoeNumber=body.shoeNumber,
         color=body.color,
         material=body.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -746,7 +670,6 @@ def create_shoe(
             "material": body.material.value,
             "decksConsumed": DECKS_PER_SHOE,
             "shoeNumber": shoe.shoeNumber,
-            "barcode": shoe.barcode,
             "containerId": container.id,
             "containerCode": container.code,
         },
@@ -773,26 +696,6 @@ def list_shoes(
     if studioId:
         q = q.filter(Shoe.studioId == studioId)
     return q.order_by(Shoe.createdAt.desc()).all()
-
-
-@router.get("/shred-events", response_model=List[ShredEventOut])
-def list_shred_events(
-    shoeId: Optional[int] = Query(None),
-    color: Optional[CardColor] = Query(None),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    """List all shredding events.  Optionally filter by shoe or color.
-
-    Each shredding operation creates a separate event so the full lifecycle
-    history is preserved across multiple shred → refill cycles.
-    """
-    q = db.query(ShredEvent)
-    if shoeId is not None:
-        q = q.filter(ShredEvent.shoeId == shoeId)
-    if color is not None:
-        q = q.filter(ShredEvent.color == color)
-    return q.order_by(ShredEvent.shredAt.desc()).all()
 
 
 @router.get("/shoes/{shoe_id}", response_model=ShoeOut)
@@ -1065,7 +968,6 @@ def replace_shoe(
 
     new_shoe = Shoe(
         shoeNumber=original.shoeNumber,
-        barcode=_generate_barcode(db, original.color),
         color=original.color,
         material=original.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -1111,7 +1013,6 @@ def replace_shoe(
         detail={
             "originalShoeId": shoe_id,
             "shoeNumber": new_shoe.shoeNumber,
-            "barcode": new_shoe.barcode,
             "color": new_shoe.color.value,
             "material": new_shoe.material.value if new_shoe.material else None,
             "decksConsumed": DECKS_PER_SHOE,
