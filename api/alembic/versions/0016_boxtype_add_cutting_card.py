@@ -8,30 +8,34 @@ Changes:
 - Add 'CUTTING_CARD' to the PostgreSQL "BoxType" enum
   (ALTER TYPE ADD VALUE must run outside a transaction)
 """
-
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0016_boxtype_add_cutting_card"
 down_revision: Union[str, Sequence[str], None] = "0015_deck_type_cutting_cards"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# Re-usable reference to BoxType that avoids CREATE TYPE on an existing enum.
+box_type_enum = postgresql.ENUM(
+    "STANDARD",
+    "SPARE",
+    "CUTTING_CARD",
+    name="BoxType",
+    create_type=False,
+)
+
 
 def upgrade() -> None:
-    # IMPORTANT:
-    # ALTER TYPE must run outside transaction
+    # ALTER TYPE ADD VALUE cannot run inside a transaction block.
     with op.get_context().autocommit_block():
-        op.execute(
-            sa.text(
-                "ALTER TYPE \"BoxType\" ADD VALUE IF NOT EXISTS 'CUTTING_CARD'"
-            )
-        )
+        op.execute(sa.text("ALTER TYPE \"BoxType\" ADD VALUE IF NOT EXISTS 'CUTTING_CARD'"))
 
 
 def downgrade() -> None:
-    # PostgreSQL does NOT support removing enum values safely.
-    # Proper downgrade would require full type recreation → risky.
+    # PostgreSQL does not support removing individual enum values.
+    # A full type rebuild would be required; omit for safety.
     pass
