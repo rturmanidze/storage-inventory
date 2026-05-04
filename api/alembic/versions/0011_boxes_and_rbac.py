@@ -57,7 +57,7 @@ def upgrade() -> None:
         sa.Column("material", postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False), nullable=False),
         sa.Column(
             "boxType",
-            sa.Enum(name="BoxType", create_type=False),
+            postgresql.ENUM("STANDARD", "SPARE", "CUTTING_CARD", name="BoxType", create_type=False),
             nullable=False,
             server_default="STANDARD",
         ),
