@@ -4,6 +4,29 @@ import toast from 'react-hot-toast'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 
+type DeckNumber = 'DECK1' | 'DECK2' | 'DECK3' | 'DECK4' | 'DECK5' | 'DECK6' | 'DECK7' | 'DECK8'
+
+interface ShoeContainerLink {
+  id: number
+  deckType: DeckNumber
+  containerId: number | null
+  decksConsumed: number
+}
+
+interface DeckTypeAvailability {
+  deckType: DeckNumber
+  available: boolean
+  containersAvailable: number
+  decksAvailable: number
+}
+
+interface ShoeAssemblyAvailability {
+  canCreate: boolean
+  deckAvailability: DeckTypeAvailability[]
+  cuttingCardsAvailable: number
+  missingDeckTypes: DeckNumber[]
+}
+
 interface Studio {
   id: number
   name: string
@@ -57,7 +80,9 @@ interface Shoe {
   refilledBy: { id: number; username: string } | null
   physicalDamageBy: { id: number; username: string } | null
   physicallyDestroyedBy: { id: number; username: string } | null
-  shredEvents: Array<{ id: number; shredAt: string; decksShredded: number }> 
+  shredEvents: Array<{ id: number; shredAt: string; decksShredded: number }>
+  containerLinks: ShoeContainerLink[]
+  cuttingCardContainerId: number | null
 }
 
 interface CardInventory {
@@ -134,11 +159,13 @@ export default function Shoes() {
   const [physicalDamageModalShoe, setPhysicalDamageModalShoe] = useState<Shoe | null>(null)
   const [physicalDamageReason, setPhysicalDamageReason] = useState('')
   const [confirmDestroyModalShoe, setConfirmDestroyModalShoe] = useState<Shoe | null>(null)
+  const [replaceCuttingCardsShoe, setReplaceCuttingCardsShoe] = useState<Shoe | null>(null)
   const [selectedColor, setSelectedColor] = useState<'BLACK' | 'RED'>('BLACK')
   const [selectedMaterial, setSelectedMaterial] = useState<'PLASTIC' | 'PAPER'>('PLASTIC')
   const [selectedStudioId, setSelectedStudioId] = useState<number | ''>('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const canEdit = user?.role === 'ADMIN' || user?.role === 'MANAGER'
+  const canShuffler = ['ADMIN', 'MANAGER', 'SHIFT_MANAGER', 'SHUFFLER'].includes(user?.role ?? '')
 
   const { data: inventory } = useQuery<CardInventory>({
     queryKey: ['card-inventory'],
@@ -169,6 +196,15 @@ export default function Shoes() {
     queryKey: ['containers-active'],
     queryFn: () => api.get('/containers?archived=false').then(r => r.data),
     refetchInterval: 15_000,
+  })
+
+  // Assembly availability for 8-deck-type mode
+  const { data: assemblyAvailability } = useQuery<ShoeAssemblyAvailability>({
+    queryKey: ['shoe-assembly-availability', selectedColor, selectedMaterial],
+    queryFn: () =>
+      api.get(`/cards/shoe-assembly-availability?color=${selectedColor}&material=${selectedMaterial}`).then(r => r.data),
+    enabled: createModalOpen,
+    retry: false,
   })
 
   const invalidate = () => {
@@ -248,6 +284,16 @@ export default function Shoes() {
     mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/confirm-physical-destroy`),
     onSuccess: () => { invalidate(); toast.success('Shoe physically destroyed and removed from service'); setConfirmDestroyModalShoe(null) },
     onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to confirm physical destruction'),
+  })
+
+  const replaceCuttingCardsMutation = useMutation({
+    mutationFn: (shoeId: number) => api.post(`/cards/shoes/${shoeId}/replace-cutting-cards`, {}),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Cutting cards replaced — 2 new cutting cards deducted')
+      setReplaceCuttingCardsShoe(null)
+    },
+    onError: (e: any) => toast.error(e.response?.data?.detail ?? 'Failed to replace cutting cards'),
   })
 
   function handleSend() {
@@ -414,6 +460,18 @@ export default function Shoes() {
                       {shoe.barcode && (
                         <p className="text-2xs text-gray-400 font-normal mt-0.5">{shoe.barcode}</p>
                       )}
+                      {shoe.containerLinks && shoe.containerLinks.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-1">
+                          {shoe.containerLinks.map(link => (
+                            <span key={link.id} className="text-2xs bg-violet-50 text-violet-600 rounded px-1 py-0.5 font-medium">
+                              {link.deckType.replace('DECK', 'D')}
+                            </span>
+                          ))}
+                          {shoe.cuttingCardContainerId && (
+                            <span className="text-2xs bg-teal-50 text-teal-600 rounded px-1 py-0.5 font-medium">✂️ CC</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
                     <td className="px-4 py-3"><MaterialBadge material={shoe.material} /></td>
@@ -533,6 +591,16 @@ export default function Shoes() {
                               Confirm Destroy
                             </button>
                           )}
+                          {/* Replace cutting cards for active shoes that have cutting cards assigned */}
+                          {canShuffler && shoe.cuttingCardContainerId !== null &&
+                           ['IN_WAREHOUSE', 'SENT_TO_STUDIO', 'RETURNED', 'REFILLED'].includes(shoe.status) && (
+                            <button
+                              className="btn-ghost btn-sm text-teal-600 border-teal-200 hover:bg-teal-50"
+                              onClick={() => setReplaceCuttingCardsShoe(shoe)}
+                            >
+                              ✂️ Replace Cutting Cards
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}
@@ -553,26 +621,54 @@ export default function Shoes() {
               <button className="btn-ghost btn-sm" onClick={() => setCreateModalOpen(false)}>✕</button>
             </div>
             <div className="space-y-5">
-              <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
-                <p className="font-medium text-gray-700 mb-2">Creation Requirements</p>
-                <ul className="space-y-1 text-xs">
-                  <li>• 1 shoe = 8 decks = 416 cards</li>
-                  <li>• Black available: <strong>{availableBlack} decks</strong>
-                    {allBlackLocked
-                      ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
-                      : unlockedBlack.length > 0
-                        ? <span className="text-green-600 ml-1">({unlockedBlack.length} unlocked container{unlockedBlack.length !== 1 ? 's' : ''}, {unlockedBlackDecks} decks)</span>
-                        : null}
-                  </li>
-                  <li>• Red available: <strong>{availableRed} decks</strong>
-                    {allRedLocked
-                      ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
-                      : unlockedRed.length > 0
-                        ? <span className="text-green-600 ml-1">({unlockedRed.length} unlocked container{unlockedRed.length !== 1 ? 's' : ''}, {unlockedRedDecks} decks)</span>
-                        : null}
-                  </li>
-                </ul>
-              </div>
+              {/* Show assembly availability when 8-deck-type mode is active */}
+              {assemblyAvailability && assemblyAvailability.deckAvailability.length > 0 ? (
+                <div className={`rounded-lg p-4 text-sm border ${assemblyAvailability.canCreate ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+                  <p className={`font-medium mb-2 ${assemblyAvailability.canCreate ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {assemblyAvailability.canCreate ? '✅ All 8 deck types available' : '❌ Missing deck types'}
+                  </p>
+                  <div className="grid grid-cols-4 gap-1 mb-2">
+                    {assemblyAvailability.deckAvailability.map(d => (
+                      <div
+                        key={d.deckType}
+                        className={`text-center rounded px-1 py-1 text-xs font-medium ${d.available ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}
+                      >
+                        {d.deckType.replace('DECK', 'D')}
+                        {d.available ? ' ✓' : ' ✗'}
+                      </div>
+                    ))}
+                  </div>
+                  <p className={`text-xs ${assemblyAvailability.cuttingCardsAvailable >= 2 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    ✂️ Cutting cards: <strong>{assemblyAvailability.cuttingCardsAvailable}</strong> available (2 required)
+                  </p>
+                  {assemblyAvailability.missingDeckTypes.length > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      Missing: {assemblyAvailability.missingDeckTypes.join(', ')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600">
+                  <p className="font-medium text-gray-700 mb-2">Creation Requirements</p>
+                  <ul className="space-y-1 text-xs">
+                    <li>• 1 shoe = 8 decks = 416 cards</li>
+                    <li>• Black available: <strong>{availableBlack} decks</strong>
+                      {allBlackLocked
+                        ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
+                        : unlockedBlack.length > 0
+                          ? <span className="text-green-600 ml-1">({unlockedBlack.length} unlocked container{unlockedBlack.length !== 1 ? 's' : ''}, {unlockedBlackDecks} decks)</span>
+                          : null}
+                    </li>
+                    <li>• Red available: <strong>{availableRed} decks</strong>
+                      {allRedLocked
+                        ? <span className="text-red-500 ml-1">(🔒 all containers locked)</span>
+                        : unlockedRed.length > 0
+                          ? <span className="text-green-600 ml-1">({unlockedRed.length} unlocked container{unlockedRed.length !== 1 ? 's' : ''}, {unlockedRedDecks} decks)</span>
+                          : null}
+                    </li>
+                  </ul>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Select Color</label>
                 <div className="flex gap-3">
@@ -585,7 +681,6 @@ export default function Shoes() {
                       <button
                         key={c}
                         type="button"
-                        disabled={!canCreate}
                         onClick={() => setSelectedColor(c)}
                         className={`flex-1 px-4 py-4 rounded-xl border-2 text-sm font-medium transition-all ${
                           selectedColor === c
@@ -626,10 +721,15 @@ export default function Shoes() {
               <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700">
                 Creating a <strong>{selectedColor === 'BLACK' ? 'Black' : 'Red'}</strong>{' '}
                 <strong>{selectedMaterial === 'PLASTIC' ? 'Plastic' : 'Paper'}</strong> shoe will consume{' '}
-                <strong>8 decks</strong> ({(8 * 52).toLocaleString()} cards).
+                <strong>8 decks</strong> (1 per deck type) + <strong>2 cutting cards</strong>.
                 A unique barcode will be auto-generated.
               </div>
-              {(selectedColor === 'BLACK' ? allBlackLocked : allRedLocked) && (
+              {assemblyAvailability && !assemblyAvailability.canCreate && assemblyAvailability.deckAvailability.length > 0 && (
+                <div className="bg-red-50 rounded-lg p-3 text-xs text-red-700 font-medium">
+                  ❌ All 8 deck types (Deck1–Deck8) are required to create a shoe.
+                </div>
+              )}
+              {assemblyAvailability === undefined && (selectedColor === 'BLACK' ? allBlackLocked : allRedLocked) && (
                 <div className="bg-red-50 rounded-lg p-3 text-xs text-red-700 font-medium">
                   🔒 All {selectedColor.toLowerCase()} containers are locked. Please unlock a container to continue.
                 </div>
@@ -640,8 +740,10 @@ export default function Shoes() {
                   className="btn-primary flex-1"
                   disabled={
                     createMutation.isPending ||
-                    (selectedColor === 'BLACK' ? allBlackLocked || unlockedBlackDecks < 8 : allRedLocked || unlockedRedDecks < 8) ||
-                    (selectedColor === 'BLACK' ? availableBlack < 8 : availableRed < 8)
+                    (assemblyAvailability && assemblyAvailability.deckAvailability.length > 0
+                      ? !assemblyAvailability.canCreate
+                      : (selectedColor === 'BLACK' ? allBlackLocked || unlockedBlackDecks < 8 : allRedLocked || unlockedRedDecks < 8) ||
+                        (selectedColor === 'BLACK' ? availableBlack < 8 : availableRed < 8))
                   }
                   onClick={() => createMutation.mutate({ color: selectedColor, material: selectedMaterial })}
                 >
@@ -998,6 +1100,38 @@ export default function Shoes() {
                   onClick={() => confirmDestroyMutation.mutate(confirmDestroyModalShoe.id)}
                 >
                   {confirmDestroyMutation.isPending ? 'Destroying…' : 'Confirm Destruction'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Replace Cutting Cards Modal */}
+      {replaceCuttingCardsShoe && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setReplaceCuttingCardsShoe(null) }}>
+          <div className="modal-content w-full max-w-sm">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">Replace Cutting Cards</h2>
+              <button className="btn-ghost btn-sm" onClick={() => setReplaceCuttingCardsShoe(null)}>✕</button>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                Shoe <strong>#{replaceCuttingCardsShoe.shoeNumber}</strong> — <ColorBadge color={replaceCuttingCardsShoe.color} />
+              </div>
+              <div className="bg-teal-50 rounded-lg p-3 text-xs text-teal-700">
+                ✂️ This will deduct <strong>2 cutting cards</strong> from the cutting card inventory.
+                <br /><br />The shoe's <strong>decks are NOT changed</strong>. Only the cutting cards are replaced.
+                Old cutting cards will be marked as removed.
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button className="btn-ghost flex-1" onClick={() => setReplaceCuttingCardsShoe(null)}>Cancel</button>
+                <button
+                  className="btn-primary flex-1 bg-teal-600 hover:bg-teal-700"
+                  disabled={replaceCuttingCardsMutation.isPending}
+                  onClick={() => replaceCuttingCardsMutation.mutate(replaceCuttingCardsShoe.id)}
+                >
+                  {replaceCuttingCardsMutation.isPending ? 'Replacing…' : 'Replace Cutting Cards'}
                 </button>
               </div>
             </div>
