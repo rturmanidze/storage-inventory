@@ -43,7 +43,7 @@ def upgrade() -> None:
         "Container",
         sa.Column(
             "deckType",
-            sa.Enum(name="DeckNumber", create_type=False),
+            postgresql.ENUM("DECK1", "DECK2", "DECK3", "DECK4", "DECK5", "DECK6", "DECK7", "DECK8", name="DeckNumber", create_type=False),
             nullable=True,
         ),
     )
@@ -104,7 +104,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "deckType",
-            sa.Enum(name="DeckNumber", create_type=False),
+            postgresql.ENUM("DECK1", "DECK2", "DECK3", "DECK4", "DECK5", "DECK6", "DECK7", "DECK8", name="DeckNumber", create_type=False),
             nullable=False,
         ),
         sa.Column("decksConsumed", sa.Integer(), nullable=False, server_default="1"),

@@ -61,7 +61,7 @@ def upgrade() -> None:
             nullable=False,
             server_default="STANDARD",
         ),
-        sa.Column("spareDeckNumber", sa.Enum(name="DeckNumber", create_type=False), nullable=True),
+        sa.Column("spareDeckNumber", postgresql.ENUM("DECK1", "DECK2", "DECK3", "DECK4", "DECK5", "DECK6", "DECK7", "DECK8", name="DeckNumber", create_type=False), nullable=True),
         sa.Column("containerId", sa.Integer(), sa.ForeignKey("Container.id", ondelete="SET NULL"), nullable=True),
         sa.Column("isConsumed", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("consumedAt", sa.DateTime(), nullable=True),
