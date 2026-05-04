@@ -288,8 +288,9 @@ class DeckNumber(str, enum.Enum):
 
 
 class BoxType(str, enum.Enum):
-    STANDARD = "STANDARD"  # Contains all 8 deck groups (Deck1–Deck8)
-    SPARE = "SPARE"        # Contains only one deck type
+    STANDARD = "STANDARD"      # Contains all 8 deck groups (Deck1–Deck8)
+    SPARE = "SPARE"            # Contains only one deck type
+    CUTTING_CARD = "CUTTING_CARD"  # Box used for cutting cards
 
 
 class ContainerEventType(str, enum.Enum):
