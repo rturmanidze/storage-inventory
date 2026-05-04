@@ -13,7 +13,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 # ─────────────────────────────────────────────────────────────
-# ENUM DEFINITIONS (REUSED - DO NOT INLINE IN TABLE)
+# ENUM DEFINITIONS (REUSED)
 # ─────────────────────────────────────────────────────────────
 
 DeckNumberEnum = postgresql.ENUM(
@@ -43,37 +43,40 @@ CardMaterialEnum = postgresql.ENUM(
 
 
 def upgrade() -> None:
-    # ── Role updates (safe in autocommit) ──────────────────────
+    # ── Role updates ───────────────────────────────────────────
     with op.get_context().autocommit_block():
         op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
         op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
         op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
 
-    # ── ENUM creation (idempotent) ─────────────────────────────
+    # ── ENUM creation (FIXED lowercase check) ──────────────────
     op.execute(sa.text("""
-    DO $$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'DeckNumber') THEN
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'decknumber') THEN
             CREATE TYPE "DeckNumber" AS ENUM (
-                'DECK1','DECK2','DECK3','DECK4','DECK5','DECK6','DECK7','DECK8'
+                'DECK1','DECK2','DECK3','DECK4',
+                'DECK5','DECK6','DECK7','DECK8'
             );
         END IF;
-    END $$;
+    END$$;
     """))
 
     op.execute(sa.text("""
-    DO $$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BoxType') THEN
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'boxtype') THEN
             CREATE TYPE "BoxType" AS ENUM (
                 'STANDARD','SPARE','CUTTING_CARD'
             );
         END IF;
-    END $$;
+    END$$;
     """))
 
     # ── Box table ──────────────────────────────────────────────
     op.create_table(
         "Box",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("id", sa.Integer(), primary_key=True),
 
         sa.Column("color", CardColorEnum, nullable=False),
         sa.Column("material", CardMaterialEnum, nullable=False),
@@ -82,14 +85,10 @@ def upgrade() -> None:
             "boxType",
             BoxTypeEnum,
             nullable=False,
-            server_default="STANDARD",
+            server_default=sa.text("'STANDARD'")
         ),
 
-        sa.Column(
-            "spareDeckNumber",
-            DeckNumberEnum,
-            nullable=True,
-        ),
+        sa.Column("spareDeckNumber", DeckNumberEnum, nullable=True),
 
         sa.Column(
             "containerId",
@@ -98,7 +97,7 @@ def upgrade() -> None:
             nullable=True,
         ),
 
-        sa.Column("isConsumed", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("isConsumed", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("consumedAt", sa.DateTime(), nullable=True),
 
         sa.Column(
@@ -125,7 +124,7 @@ def upgrade() -> None:
     # ── ShredEvent table ───────────────────────────────────────
     op.create_table(
         "ShredEvent",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("id", sa.Integer(), primary_key=True),
 
         sa.Column(
             "shoeId",
@@ -180,5 +179,6 @@ def downgrade() -> None:
     op.drop_index("Box_color_idx", table_name="Box")
     op.drop_table("Box")
 
-    op.execute(sa.text('DROP TYPE IF EXISTS "BoxType"'))
-    op.execute(sa.text('DROP TYPE IF EXISTS "DeckNumber"'))
+
+    op.execute(sa.text('DROP TYPE IF EXISTS "BoxType" CASCADE'))
+    op.execute(sa.text('DROP TYPE IF EXISTS "DeckNumber" CASCADE'))
