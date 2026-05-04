@@ -414,10 +414,14 @@ def consume_cutting_cards(
     cards_needed: int = CUTTING_CARDS_PER_SHOE,
     user_id: Optional[int],
     shoe_id: Optional[int],
+    event_type: CuttingCardEventType = CuttingCardEventType.DEDUCTED,
+    note: Optional[str] = None,
 ) -> Optional[CuttingCardContainer]:
     """Deduct *cards_needed* cutting cards from the first available (unlocked) container.
 
     Returns the container used, or None when none is available (race guard).
+    ``event_type`` defaults to DEDUCTED for new shoes; pass REPLACED for the
+    replace-cutting-cards workflow.
     """
     container: Optional[CuttingCardContainer] = (
         db.query(CuttingCardContainer)
@@ -440,11 +444,11 @@ def consume_cutting_cards(
                       user_id=user_id, note="Container fully depleted — archived")
 
     _add_cc_event(
-        db, container, CuttingCardEventType.DEDUCTED,
+        db, container, event_type,
         user_id=user_id,
         shoe_id=shoe_id,
         cards_changed=-cards_needed,
-        note=f"Deducted {cards_needed} cutting cards for shoe #{shoe_id}",
+        note=note or f"Deducted {cards_needed} cutting cards for shoe #{shoe_id}",
     )
     db.flush()
     return container

@@ -20,11 +20,15 @@ interface ContainerEvent {
   user: { id: number; username: string } | null
 }
 
+type DeckNumber = 'DECK1' | 'DECK2' | 'DECK3' | 'DECK4' | 'DECK5' | 'DECK6' | 'DECK7' | 'DECK8'
+const DECK_NUMBERS: DeckNumber[] = ['DECK1', 'DECK2', 'DECK3', 'DECK4', 'DECK5', 'DECK6', 'DECK7', 'DECK8']
+
 interface ContainerInfo {
   id: number
   code: string
   color: 'BLACK' | 'RED'
   material: 'PLASTIC' | 'PAPER'
+  deckType: DeckNumber | null
   decksRemaining: number
   isLocked: boolean
   createdAt: string
@@ -68,6 +72,27 @@ function MaterialBadge({ material }: { material: 'PLASTIC' | 'PAPER' }) {
   )
 }
 
+function DeckTypeBadge({ deckType }: { deckType: DeckNumber | null }) {
+  if (!deckType) return <span className="text-gray-400 text-xs">—</span>
+  const num = deckType.replace('DECK', '')
+  const colors = [
+    'bg-violet-100 text-violet-700',
+    'bg-blue-100 text-blue-700',
+    'bg-cyan-100 text-cyan-700',
+    'bg-teal-100 text-teal-700',
+    'bg-green-100 text-green-700',
+    'bg-lime-100 text-lime-700',
+    'bg-amber-100 text-amber-700',
+    'bg-orange-100 text-orange-700',
+  ]
+  const idx = parseInt(num, 10) - 1
+  return (
+    <span className={`badge text-xs font-semibold ${colors[idx] ?? 'bg-gray-100 text-gray-700'}`}>
+      Deck {num}
+    </span>
+  )
+}
+
 function StatusBadge({ c }: { c: ContainerInfo }) {
   if (c.archivedAt) return <span className="badge bg-gray-100 text-gray-500">Archived</span>
   if (c.isLocked)   return <span className="badge bg-blue-100 text-blue-700">🔒 Locked</span>
@@ -92,6 +117,7 @@ const schema = z.object({
   code: z.string().min(1, 'Code is required').max(64),
   color: z.enum(['BLACK', 'RED']),
   material: z.enum(['PLASTIC', 'PAPER']),
+  deckType: z.enum(['DECK1', 'DECK2', 'DECK3', 'DECK4', 'DECK5', 'DECK6', 'DECK7', 'DECK8']).optional().nullable(),
 })
 
 type ContainerForm = z.infer<typeof schema>
@@ -340,6 +366,7 @@ export default function Containers() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Code</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Material</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Deck Type</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Remaining</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
@@ -356,6 +383,7 @@ export default function Containers() {
                   <td className="px-4 py-3 font-mono text-xs font-semibold text-gray-800">{c.code}</td>
                   <td className="px-4 py-3"><ColorBadge color={c.color} /></td>
                   <td className="px-4 py-3"><MaterialBadge material={c.material} /></td>
+                  <td className="px-4 py-3"><DeckTypeBadge deckType={c.deckType} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2 min-w-[120px]">
                       <div className="flex-1 bg-gray-200 rounded-full h-1.5">
@@ -479,6 +507,24 @@ export default function Containers() {
                 <strong>Cards:</strong> {(CAPACITY * 52).toLocaleString()} cards total
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Deck Type <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <select
+                  {...register('deckType')}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="">— No deck type (legacy multi-deck) —</option>
+                  {DECK_NUMBERS.map(d => (
+                    <option key={d} value={d}>{d.replace('DECK', 'Deck ')}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Assign a deck type (Deck1–Deck8) for 8-container shoe assembly mode.
+                </p>
+              </div>
+
               <div className="flex gap-3 pt-1">
                 <button type="button" className="btn-ghost flex-1" onClick={() => { setCreateOpen(false); reset() }}>
                   Cancel
@@ -505,6 +551,7 @@ export default function Containers() {
                 <div className="flex items-center gap-2 mt-1">
                   <ColorBadge color={detailContainer.color} />
                   <MaterialBadge material={detailContainer.material} />
+                  <DeckTypeBadge deckType={detailContainer.deckType} />
                   <StatusBadge c={detailContainer} />
                 </div>
               </div>
