@@ -4,6 +4,8 @@ import toast from 'react-hot-toast'
 import api from '../api/client'
 import { useAuth } from '../contexts/AuthContext'
 
+const CUTTING_CARDS_PER_SHOE = 2
+
 type DeckNumber = 'DECK1' | 'DECK2' | 'DECK3' | 'DECK4' | 'DECK5' | 'DECK6' | 'DECK7' | 'DECK8'
 
 interface ShoeContainerLink {
@@ -638,8 +640,8 @@ export default function Shoes() {
                       </div>
                     ))}
                   </div>
-                  <p className={`text-xs ${assemblyAvailability.cuttingCardsAvailable >= 2 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    ✂️ Cutting cards: <strong>{assemblyAvailability.cuttingCardsAvailable}</strong> available (2 required)
+                  <p className={`text-xs ${assemblyAvailability.cuttingCardsAvailable >= CUTTING_CARDS_PER_SHOE ? 'text-emerald-600' : 'text-red-600'}`}>
+                    ✂️ Cutting cards: <strong>{assemblyAvailability.cuttingCardsAvailable}</strong> available ({CUTTING_CARDS_PER_SHOE} required)
                   </p>
                   {assemblyAvailability.missingDeckTypes.length > 0 && (
                     <p className="text-xs text-red-600 mt-1">
@@ -721,7 +723,7 @@ export default function Shoes() {
               <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700">
                 Creating a <strong>{selectedColor === 'BLACK' ? 'Black' : 'Red'}</strong>{' '}
                 <strong>{selectedMaterial === 'PLASTIC' ? 'Plastic' : 'Paper'}</strong> shoe will consume{' '}
-                <strong>8 decks</strong> (1 per deck type) + <strong>2 cutting cards</strong>.
+                <strong>8 decks</strong> (1 per deck type) + <strong>{CUTTING_CARDS_PER_SHOE} cutting cards</strong>.
                 A unique barcode will be auto-generated.
               </div>
               {assemblyAvailability && !assemblyAvailability.canCreate && assemblyAvailability.deckAvailability.length > 0 && (
@@ -1120,7 +1122,7 @@ export default function Shoes() {
                 Shoe <strong>#{replaceCuttingCardsShoe.shoeNumber}</strong> — <ColorBadge color={replaceCuttingCardsShoe.color} />
               </div>
               <div className="bg-teal-50 rounded-lg p-3 text-xs text-teal-700">
-                ✂️ This will deduct <strong>2 cutting cards</strong> from the cutting card inventory.
+                ✂️ This will deduct <strong>{CUTTING_CARDS_PER_SHOE} cutting cards</strong> from the cutting card inventory.
                 <br /><br />The shoe's <strong>decks are NOT changed</strong>. Only the cutting cards are replaced.
                 Old cutting cards will be marked as removed.
               </div>
