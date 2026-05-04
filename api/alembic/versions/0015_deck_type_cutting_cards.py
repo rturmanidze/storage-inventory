@@ -26,16 +26,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── CuttingCardEventType enum — must run outside transaction ──────────────
-    with op.get_context().autocommit_block():
-        op.execute(sa.text("""
-            DO $$ BEGIN
-                CREATE TYPE "CuttingCardEventType" AS ENUM (
-                    'CREATED', 'DEDUCTED', 'REPLACED', 'QUANTITY_ADJUSTED'
-                );
-            EXCEPTION WHEN duplicate_object THEN NULL;
-            END $$
-        """))
+    # ── CuttingCardEventType enum ─────────────────────────────────────────────
+    # CREATE TYPE is transactional DDL in PostgreSQL — no autocommit needed.
+    # This matches the pattern used in migration 0011 for DeckNumber/BoxType.
+    op.execute(sa.text("""
+        DO $$ BEGIN
+            CREATE TYPE "CuttingCardEventType" AS ENUM (
+                'CREATED', 'DEDUCTED', 'REPLACED', 'QUANTITY_ADJUSTED'
+            );
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+    """))
 
     # ── Add deckType column to Container (nullable for backward compat) ───────
     op.add_column(
