@@ -20,11 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ALTER TYPE ADD VALUE must run outside a transaction
-    with op.get_context().autocommit_block():
-        op.execute(sa.text(
-            "ALTER TYPE \"ContainerEventType\" ADD VALUE IF NOT EXISTS 'QUANTITY_ADJUSTED'"
-        ))
+    # ContainerEventType is now a plain VARCHAR column; no enum type alteration needed.
+    pass
 
 
 def downgrade() -> None:
