@@ -30,6 +30,15 @@ except Exception as exc:
     print(f"alembic_version pre-check skipped: {exc}", flush=True)
 PYEOF
 
+# If the migration graph itself has multiple heads (e.g. due to stale .pyc
+# files or diverged branches), merge them into a single head automatically
+# before running the upgrade.
+ALEMBIC_HEADS=$(alembic heads 2>/dev/null | grep -c "(head)" || true)
+if [ "${ALEMBIC_HEADS:-0}" -gt 1 ]; then
+    echo "Multiple alembic graph heads detected (${ALEMBIC_HEADS}). Merging..."
+    alembic merge heads -m "auto_merge_entrypoint"
+fi
+
 alembic upgrade head
 
 echo "Running database seed..."

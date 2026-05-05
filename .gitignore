@@ -3,3 +3,8 @@ api/dist/
 web/node_modules/
 web/dist/
 .env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
