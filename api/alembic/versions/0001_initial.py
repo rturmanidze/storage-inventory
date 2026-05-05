@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 # revision identifiers, used by Alembic.
 revision: str = "0001_initial"
@@ -18,6 +19,32 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # --- enum types ---
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "Role" AS ENUM ('ADMIN', 'MANAGER', 'VIEWER');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "UnitStatus" AS ENUM ('IN_STOCK', 'ISSUED', 'QUARANTINED', 'SCRAPPED');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "MovementType" AS ENUM ('RECEIVE', 'TRANSFER', 'ISSUE', 'RETURN', 'ADJUST');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE "IssuedToType" AS ENUM ('PERSON', 'DEPARTMENT', 'CUSTOMER');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+
     # --- User ---
     op.create_table(
         "User",
@@ -27,7 +54,7 @@ def upgrade() -> None:
         sa.Column("passwordHash", sa.String, nullable=False),
         sa.Column(
             "role",
-            sa.String,
+            PG_ENUM("ADMIN", "MANAGER", "VIEWER", name="Role", create_type=False),
             nullable=False,
             server_default="VIEWER",
         ),
@@ -96,7 +123,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String, nullable=False),
         sa.Column(
             "type",
-            sa.String,
+            PG_ENUM("PERSON", "DEPARTMENT", "CUSTOMER", name="IssuedToType", create_type=False),
             nullable=False,
             server_default="PERSON",
         ),
@@ -112,7 +139,7 @@ def upgrade() -> None:
         sa.Column("serial", sa.String, nullable=False, unique=True),
         sa.Column(
             "status",
-            sa.String,
+            PG_ENUM("IN_STOCK", "ISSUED", "QUARANTINED", "SCRAPPED", name="UnitStatus", create_type=False),
             nullable=False,
             server_default="IN_STOCK",
         ),
@@ -132,7 +159,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column(
             "type",
-            sa.String,
+            PG_ENUM("RECEIVE", "TRANSFER", "ISSUE", "RETURN", "ADJUST", name="MovementType", create_type=False),
             nullable=False,
         ),
         sa.Column("note", sa.Text, nullable=True),
