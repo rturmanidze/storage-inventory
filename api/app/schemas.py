@@ -524,6 +524,7 @@ class ShoeOut(OrmBase):
     physicallyDestroyedAt: Optional[datetime] = None
     refilledAt: Optional[datetime] = None
     refilledById: Optional[int] = None
+    cuttingCardCount: int = 0
     studio: Optional[StudioOut] = None
     createdBy: Optional[MovementCreatedByOut] = None
     sentBy: Optional[MovementCreatedByOut] = None
@@ -575,6 +576,8 @@ class CardInventorySummary(BaseModel):
     totalStockDecks: int = 0
     totalStockCards: int = 0
     lockedDecks: int = 0
+    # Cutting card inventory (universal, no color distinction)
+    cuttingCards: int = 0
 
 
 class DeckColorStatus(BaseModel):

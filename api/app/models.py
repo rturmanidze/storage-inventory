@@ -269,6 +269,7 @@ class Notification(Base):
 class CardColor(str, enum.Enum):
     BLACK = "BLACK"
     RED = "RED"
+    CUTTING = "CUTTING"
 
 
 class CardMaterial(str, enum.Enum):
@@ -545,6 +546,8 @@ class Shoe(Base):
     containerId = Column(Integer, ForeignKey("Container.id", ondelete="SET NULL"), nullable=True)
     # Box from which this shoe's decks were sourced
     boxId = Column(Integer, ForeignKey("Box.id", ondelete="SET NULL"), nullable=True)
+    # Number of cutting cards consumed when this shoe was assembled
+    cuttingCardCount = Column(Integer, nullable=False, default=0)
 
     studio = relationship("Studio", back_populates="shoes")
     createdBy = relationship("User", foreign_keys=[createdById])
