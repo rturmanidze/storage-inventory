@@ -17,7 +17,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "0015_deck_type_cutting_cards"
 down_revision: Union[str, Sequence[str], None] = "0014_merge_heads"
@@ -26,28 +25,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── CuttingCardEventType enum ─────────────────────────────────────────────
-    # CREATE TYPE is transactional DDL in PostgreSQL — no autocommit needed.
-    # This matches the pattern used in migration 0011 for DeckNumber/BoxType.
-    op.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE "CuttingCardEventType" AS ENUM (
-                'CREATED', 'DEDUCTED', 'REPLACED', 'QUANTITY_ADJUSTED'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """))
-
     # ── Add deckType column to Container (nullable for backward compat) ───────
     op.add_column(
         "Container",
         sa.Column(
             "deckType",
-            postgresql.ENUM(
-                "DECK1", "DECK2", "DECK3", "DECK4", "DECK5", "DECK6", "DECK7", "DECK8",
-                name="DeckNumber",
-                create_type=False,
-            ),
+            sa.String,
             nullable=True,
         ),
     )
@@ -81,11 +64,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "eventType",
-            postgresql.ENUM(
-                "CREATED", "DEDUCTED", "REPLACED", "QUANTITY_ADJUSTED",
-                name="CuttingCardEventType",
-                create_type=False,
-            ),
+            sa.String,
             nullable=False,
         ),
         sa.Column("cardsChanged", sa.Integer(), nullable=True),
@@ -108,11 +87,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "deckType",
-            postgresql.ENUM(
-                "DECK1", "DECK2", "DECK3", "DECK4", "DECK5", "DECK6", "DECK7", "DECK8",
-                name="DeckNumber",
-                create_type=False,
-            ),
+            sa.String,
             nullable=False,
         ),
         sa.Column("decksConsumed", sa.Integer(), nullable=False, server_default="1"),
@@ -142,4 +117,3 @@ def downgrade() -> None:
     op.drop_table("CuttingCardContainer")
     op.drop_index("Container_deckType_idx", table_name="Container")
     op.drop_column("Container", "deckType")
-    op.execute(sa.text('DROP TYPE IF EXISTS "CuttingCardEventType"'))

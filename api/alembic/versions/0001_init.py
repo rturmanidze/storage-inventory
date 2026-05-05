@@ -23,31 +23,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE "Role" AS ENUM ('ADMIN', 'MANAGER', 'VIEWER');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE "UnitStatus" AS ENUM ('IN_STOCK', 'ISSUED', 'QUARANTINED', 'SCRAPPED');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE "MovementType" AS ENUM ('RECEIVE', 'TRANSFER', 'ISSUE', 'RETURN', 'ADJUST');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
-    op.execute("""
-        DO $$ BEGIN
-            CREATE TYPE "IssuedToType" AS ENUM ('PERSON', 'DEPARTMENT', 'CUSTOMER');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$;
-    """)
-
-    op.execute("""
         CREATE TABLE IF NOT EXISTS "Warehouse" (
             "id"        SERIAL PRIMARY KEY,
             "name"      TEXT NOT NULL,
@@ -100,7 +75,7 @@ def upgrade() -> None:
         CREATE TABLE IF NOT EXISTS "IssuedTo" (
             "id"        SERIAL PRIMARY KEY,
             "name"      TEXT NOT NULL,
-            "type"      "IssuedToType" NOT NULL DEFAULT 'PERSON',
+            "type"      TEXT NOT NULL DEFAULT 'PERSON',
             "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
             "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
         );
@@ -111,7 +86,7 @@ def upgrade() -> None:
             "id"                SERIAL PRIMARY KEY,
             "itemId"            INTEGER NOT NULL REFERENCES "Item"("id"),
             "serial"            TEXT NOT NULL,
-            "status"            "UnitStatus" NOT NULL DEFAULT 'IN_STOCK',
+            "status"            TEXT NOT NULL DEFAULT 'IN_STOCK',
             "currentLocationId" INTEGER REFERENCES "Location"("id") ON DELETE SET NULL,
             "createdAt"         TIMESTAMP NOT NULL DEFAULT NOW(),
             "updatedAt"         TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -122,7 +97,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE IF NOT EXISTS "Movement" (
             "id"          SERIAL PRIMARY KEY,
-            "type"        "MovementType" NOT NULL,
+            "type"        TEXT NOT NULL,
             "note"        TEXT,
             "createdAt"   TIMESTAMP NOT NULL DEFAULT NOW(),
             "createdById" INTEGER NOT NULL REFERENCES "User"("id")
