@@ -192,8 +192,10 @@ export default function Boxes() {
               {DECK_NUMBERS.map(d => (
                 <span key={d} className="bg-white border border-indigo-200 rounded px-1.5 py-0.5 text-2xs font-mono text-indigo-800">{d}</span>
               ))}
+              <span className="bg-yellow-50 border border-yellow-300 rounded px-1.5 py-0.5 text-2xs font-mono text-yellow-700">✂️ Cut</span>
+              <span className="bg-yellow-50 border border-yellow-300 rounded px-1.5 py-0.5 text-2xs font-mono text-yellow-700">✂️ Cut</span>
             </div>
-            <p className="text-2xs text-indigo-500 mt-1">1 deck of each type = 8 decks total</p>
+            <p className="text-2xs text-indigo-500 mt-1">1 deck of each type = 8 decks + 2 cutting cards</p>
           </div>
           <div>
             <p className="text-xs font-semibold text-orange-600 mb-1">Spare Box</p>
