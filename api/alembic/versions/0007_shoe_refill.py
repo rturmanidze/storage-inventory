@@ -21,11 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block.
-    # Use autocommit_block() so Alembic properly tracks the transaction lifecycle
-    # instead of a raw COMMIT which can leave alembic_version in an inconsistent state.
-    with op.get_context().autocommit_block():
-        op.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'REFILLED'"))
+    # ShoeStatus is now a plain VARCHAR column; no enum type alteration needed.
 
     # Tracking columns for shoe refill event
     op.add_column("Shoe", sa.Column("refilledAt", sa.DateTime, nullable=True))

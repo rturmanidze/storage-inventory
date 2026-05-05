@@ -17,7 +17,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "0011_boxes_and_rbac"
 down_revision: Union[str, None] = "0010_shoe_number_string"
@@ -26,42 +25,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ── New Role values — must run outside a transaction ──────────────────────
-    with op.get_context().autocommit_block():
-        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'OPERATIONS_MANAGER'"))
-        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHIFT_MANAGER'"))
-        op.execute(sa.text("ALTER TYPE \"Role\" ADD VALUE IF NOT EXISTS 'SHUFFLER'"))
-
-    # ── New enum types ─────────────────────────────────────────────────────────
-    op.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE "DeckNumber" AS ENUM (
-                'DECK1','DECK2','DECK3','DECK4','DECK5','DECK6','DECK7','DECK8'
-            );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """))
-
-    op.execute(sa.text("""
-        DO $$ BEGIN
-            CREATE TYPE "BoxType" AS ENUM ('STANDARD','SPARE');
-        EXCEPTION WHEN duplicate_object THEN NULL;
-        END $$
-    """))
-
     # ── Box table ──────────────────────────────────────────────────────────────
     op.create_table(
         "Box",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
-        sa.Column("material", postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False), nullable=False),
+        sa.Column("color", sa.String, nullable=False),
+        sa.Column("material", sa.String, nullable=False),
         sa.Column(
             "boxType",
-            postgresql.ENUM("STANDARD", "SPARE", "CUTTING_CARD", name="BoxType", create_type=False),
+            sa.String,
             nullable=False,
             server_default="STANDARD",
         ),
-        sa.Column("spareDeckNumber", sa.Enum(name="DeckNumber", create_type=False), nullable=True),
+        sa.Column("spareDeckNumber", sa.String, nullable=True),
         sa.Column("containerId", sa.Integer(), sa.ForeignKey("Container.id", ondelete="SET NULL"), nullable=True),
         sa.Column("isConsumed", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("consumedAt", sa.DateTime(), nullable=True),
@@ -78,8 +54,8 @@ def upgrade() -> None:
         "ShredEvent",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("shoeId", sa.Integer(), sa.ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
-        sa.Column("material", postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False), nullable=True),
+        sa.Column("color", sa.String, nullable=False),
+        sa.Column("material", sa.String, nullable=True),
         sa.Column("decksShredded", sa.Integer(), nullable=False, server_default="8"),
         sa.Column("cardsShredded", sa.Integer(), nullable=False, server_default="416"),
         sa.Column("shredById", sa.Integer(), sa.ForeignKey("User.id", ondelete="SET NULL"), nullable=True),
@@ -104,5 +80,3 @@ def downgrade() -> None:
     op.drop_index("Box_containerId_idx", table_name="Box")
     op.drop_index("Box_color_idx", table_name="Box")
     op.drop_table("Box")
-    op.execute(sa.text('DROP TYPE IF EXISTS "BoxType"'))
-    op.execute(sa.text('DROP TYPE IF EXISTS "DeckNumber"'))

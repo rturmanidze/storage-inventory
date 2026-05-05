@@ -12,7 +12,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "0009_shoe_material"
 down_revision: Union[str, None] = "0008_containers"
@@ -25,7 +24,7 @@ def upgrade() -> None:
         "Shoe",
         sa.Column(
             "material",
-            postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
+            sa.String,
             nullable=True,
         ),
     )
