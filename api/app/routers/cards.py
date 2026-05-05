@@ -108,6 +108,11 @@ def _get_available_cutting_cards(db: Session) -> int:
 
     Cutting cards are universal — they have no BLACK/RED color distinction.
     Containers with color=CUTTING hold cutting cards regardless of material.
+
+    Note: cutting cards are tracked using ``Container.decksRemaining`` where
+    each unit in ``decksRemaining`` represents one cutting card (not a 52-card
+    deck).  This reuses the existing FIFO container infrastructure without
+    model changes.
     """
     return int(
         db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
