@@ -633,6 +633,40 @@ def _consume_box_from_container(
     return box
 
 
+@router.get("/shoe-assembly-availability")
+def get_shoe_assembly_availability(
+    color: CardColor = Query(...),
+    material: CardMaterial = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Backward-compatible endpoint for legacy clients.
+
+    Returns whether a shoe can be assembled for a given color/material pair.
+    """
+    available_decks = _get_available_decks_by_material(db, color, material)
+    available_cutting_cards = _get_available_cutting_cards(db)
+    can_assemble = available_decks >= DECKS_PER_SHOE and available_cutting_cards >= CUTTING_CARDS_PER_SHOE
+
+    reason: Optional[str] = None
+    if available_decks < DECKS_PER_SHOE:
+        reason = f"Not enough {color.value} {material.value} decks. Available: {available_decks}, required: {DECKS_PER_SHOE}"
+    elif available_cutting_cards < CUTTING_CARDS_PER_SHOE:
+        reason = f"Cutting cards: {available_cutting_cards} available ({CUTTING_CARDS_PER_SHOE} required)"
+
+    return {
+        "color": color.value,
+        "material": material.value,
+        "available": can_assemble,
+        "canAssemble": can_assemble,
+        "availableDecks": available_decks,
+        "requiredDecks": DECKS_PER_SHOE,
+        "availableCuttingCards": available_cutting_cards,
+        "requiredCuttingCards": CUTTING_CARDS_PER_SHOE,
+        "reason": reason,
+    }
+
+
 @router.post("/shoes", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)
 def create_shoe(
     body: CreateShoeRequest,
@@ -663,8 +697,9 @@ def create_shoe(
             detail=f"Cutting cards: {cutting_available} available ({CUTTING_CARDS_PER_SHOE} required)",
         )
 
+    requested_shoe_number = body.shoeNumber.strip() if body.shoeNumber else None
     shoe = Shoe(
-        shoeNumber=body.shoeNumber,
+        shoeNumber=requested_shoe_number or "0",
         color=body.color,
         material=body.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -673,6 +708,9 @@ def create_shoe(
     )
     db.add(shoe)
     db.flush()
+    if not requested_shoe_number:
+        shoe.shoeNumber = str(shoe.id)
+        db.flush()
 
     # FIFO container consumption filtered by color AND material
     container = consume_decks_fifo(
