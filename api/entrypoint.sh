@@ -3,6 +3,9 @@ set -e
 
 echo "Running database migrations..."
 
+# Remove stale Alembic bytecode to avoid loading outdated revision metadata.
+find alembic -type d -name "__pycache__" -prune -exec rm -rf {} +
+
 # If a previous migration used a manual COMMIT (needed for ALTER TYPE ADD VALUE in
 # older PostgreSQL), Alembic's transaction tracking may have been disrupted, leaving
 # multiple rows in the alembic_version table.  When that happens, `alembic upgrade

@@ -64,10 +64,20 @@ _ENUM_TYPES = [
 
 def upgrade() -> None:
     conn = op.get_bind()
+    if conn.dialect.name != "postgresql":
+        # This migration is PostgreSQL-specific (USING col::text and DROP TYPE).
+        return
+    inspector = sa.inspect(conn)
+    tables = set(inspector.get_table_names())
 
     # Convert every ENUM column to VARCHAR.  Using USING col::text makes the
     # cast explicit and works regardless of whether the column is already VARCHAR.
     for table, column in _ENUM_COLUMNS:
+        if table not in tables:
+            continue
+        columns = {col["name"] for col in inspector.get_columns(table)}
+        if column not in columns:
+            continue
         conn.execute(sa.text(
             f'ALTER TABLE "{table}" '
             f'ALTER COLUMN "{column}" TYPE VARCHAR '
