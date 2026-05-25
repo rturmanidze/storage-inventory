@@ -1,66 +1,98 @@
-# Storage Inventory — User Manual
+# Storage Inventory — Confluence Manual (Team Version)
 
-This manual explains how to use the **Storage Inventory** web application for card/deck/shoe operations, reporting, and administration.
+> Copy this page into Confluence as your main team guide.
+> Audience: operations, shufflers, shift managers, and admins.
 
-## 1. Access and Login
+## 1) What this system does
 
-1. Open the web UI:
-   - `https://localhost:8085` (same machine), or
-   - `https://<server-ip>:8085` (same network).
-2. Sign in with your username and password.
-3. Use **Sign out** from the left sidebar footer when finished.
+Storage Inventory tracks the full casino card lifecycle:
 
-## 2. User Roles
+- deck stock in warehouse,
+- packing structure (**Deck → Box → Container → Shoe**),
+- studio movement (send/return),
+- shredding and physical destruction,
+- audit history and reporting.
 
-Available roles:
+The goal is that every important action is visible, traceable, and role-controlled.
 
-- **ADMIN** — full access (users, backups, all operations)
-- **OPERATIONS_MANAGER** — full operational access (no full admin credential tasks)
-- **SHIFT_MANAGER** — shoe/container/card workflow operations
-- **SHUFFLER** — shuffle flow (send/return/shred/refill)
-- **MANAGER / VIEWER** — legacy roles used in older flows
+## 2) How to access
 
-If you cannot see a page or action button, your current role does not have permission.
+Use:
 
-## 3. Main Navigation
+- `https://localhost:8085` (same machine), or
+- `https://<server-ip>:8085` (LAN)
 
-### Overview
-- **Dashboard**: live totals, low-stock warnings, and forecast.
+Sign in with your assigned account.
+If token expires, you will be redirected to login automatically.
 
-### Card Operations
-- **Studios**: create and manage studio destinations.
-- **Deck Inventory**: add decks (black/red, plastic/paper), watch low-stock alerts.
-- **Boxes**: view standard boxes and create spare boxes.
-- **Containers**: create/lock/unlock/rename/archive containers, adjust remaining decks.
-- **Shoes**: create shoes, send/return, shred cards, refill, mark physical damage.
-- **Destroyed Shoes**: track shredded/physically destroyed shoes, recover or replace.
+## 3) Roles (who can do what)
 
-### Data / Analytics / Settings
-- **Import**: bulk import items, locations, barcodes, units, placements from CSV/XLSX.
-- **Reports**: inventory analytics and CSV exports.
-- **Audit Log**: searchable activity log.
-- **Users** (admin): create/edit/delete users and roles.
-- **Backups** (admin): create, download, restore, and delete database backups.
+- **ADMIN**: full access (users, backups, all operations)
+- **OPERATIONS_MANAGER**: full operational workflows
+- **SHIFT_MANAGER**: daily shoe/container/card workflows
+- **SHUFFLER**: send/return/shred/refill flows
+- **MANAGER / VIEWER**: legacy roles
 
-## 4. Standard Daily Workflow
+If a button/page is missing, your role does not include that permission.
 
-1. **Check Dashboard** for low-stock or critical alerts.
-2. **Add Decks** in Deck Inventory when stock is low.
-3. **Review Containers** and unlock any needed stock.
-4. **Create/Manage Shoes**:
-   - create shoe,
-   - send to studio,
-   - return from studio,
-   - shred cards when needed,
-   - recover empty shoe or replace physically destroyed shoe.
-5. **Review Destroyed Shoes** for history and replacement/recovery actions.
-6. **Use Reports/Audit** for operational review and traceability.
+## 4) System map (pages and purpose)
 
-## 5. Import Data
+### Core operational pages
 
-Import page accepts `.csv`, `.xlsx`, `.xls` and reports per-row errors.
+- **Dashboard**: real-time summary, low-stock alerts, forecast
+- **Deck Inventory**: add deck stock by color/material
+- **Boxes**: view standard boxes and create spare boxes
+- **Containers**: lock/unlock/rename/archive containers and adjust counts
+- **Shoes**: create, send, return, shred, refill, report physical damage
+- **Destroyed Shoes**: shredded and physically destroyed history, recover/replace
+- **Studios**: manage studio destinations
 
-Expected columns:
+### Governance & data pages
+
+- **Import**: bulk upload via CSV/XLSX
+- **Reports**: analytics + CSV exports
+- **Audit Log**: searchable action history
+- **Users** (admin): account and role management
+- **Backups** (admin): create/download/restore/delete backups
+
+## 5) What happens in daily operations
+
+### A. Start of shift
+
+1. Open **Dashboard** and check low-stock/critical alerts.
+2. If needed, add decks in **Deck Inventory**.
+3. Confirm containers required for operations are **unlocked**.
+
+### B. Shoe lifecycle (normal)
+
+1. **Create Shoe** (consumes required deck stock).
+2. **Send to Studio** when deployed.
+3. **Return from Studio** when cycle ends.
+4. Decide next action:
+   - shred cards, then recover shoe container, or
+   - refill for next cycle.
+
+### C. If cards are shredded
+
+- Shoe cards are destroyed and action is logged.
+- Shoe container can be recovered as empty and reused.
+- History is visible in **Destroyed Shoes** and **Audit Log**.
+
+### D. If shoe is physically destroyed
+
+- Mark physical destruction in **Shoes**.
+- Use **Replace Shoe** from **Destroyed Shoes** to create new one with same display number.
+- Replacement consumes new deck stock.
+
+## 6) Inventory logic teammates should know
+
+- Locked containers are part of **total physical stock** but not **available stock**.
+- Dashboard/Deck pages highlight low stock so action can be taken early.
+- Every critical lifecycle event is auditable (who, what, when).
+
+## 7) Import formats (quick reference)
+
+Accepted files: `.csv`, `.xlsx`, `.xls`
 
 - **Items**: `sku, name, category, unit, minStock, description`
 - **Locations**: `warehouseCode, code, description`
@@ -68,22 +100,29 @@ Expected columns:
 - **Units**: `sku, serial, status`
 - **Placements**: `serial, warehouseCode, locationCode`
 
-## 6. Backups and Restore (Admin)
+Import results show success count and row-level errors.
 
-- Automatic backups run daily (02:00 UTC).
-- You can create on-demand backups from **Backups**.
-- **Restore is destructive**: it fully replaces current database data.
-- Download backup files before major changes for extra safety.
+## 8) Backups and restore (admin only)
 
-## 7. Helpful Notes
+- Automatic backup runs daily (02:00 UTC).
+- Manual backup can be created from **Backups** page.
+- Restore fully replaces current DB data (destructive operation).
+- Always verify the target file before restore.
 
-- Locked containers are counted in total physical stock but not available stock.
-- Destroyed-shoe and shredding actions are intentionally audited and visible in history.
-- Use Reports + Audit Log together for compliance and investigation.
+## 9) Recommended team routine
 
-## 8. Troubleshooting
+Use this short checklist in Confluence for every shift:
 
-- **Cannot login / unexpected redirect to login**: session token may be expired; sign in again.
-- **Action button missing**: verify your assigned role.
-- **Import errors**: fix the row format shown in error details and re-upload.
-- **No data updates**: refresh page or verify API (`https://<host>:3010/api`) is reachable.
+1. Check Dashboard alerts
+2. Verify available deck stock and unlocked containers
+3. Run shoe send/return workflow
+4. Process shredded/destroyed shoe records
+5. Review Audit Log for anomalies
+6. Export Reports when needed
+
+## 10) Troubleshooting
+
+- **Cannot log in / redirected to login**: token expired or invalid; sign in again.
+- **Action unavailable**: account role does not permit it.
+- **Import failed**: fix row format shown in error details and re-upload.
+- **Numbers look stale**: refresh page and confirm API availability (`https://<host>:3010/api`).
