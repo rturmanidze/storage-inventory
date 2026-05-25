@@ -12,6 +12,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0004_shoe_return_destruction"
 down_revision: Union[str, None] = "0003_studios_and_cards"
@@ -20,7 +21,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ShoeStatus is now a plain VARCHAR column; no enum type alteration needed.
+    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block.
+    # Commit the Alembic-managed transaction, run the ADD VALUE statements (which execute
+    # in autocommit / no-transaction mode), then let subsequent DDL start a new implicit
+    # transaction via SQLAlchemy 2.0's autobegin behaviour.
+    bind = op.get_bind()
+    bind.execute(sa.text("COMMIT"))
+
+    # Extend ShoeStatus enum with RETURNED and DESTROYED
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'RETURNED'"))
+    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'DESTROYED'"))
 
     # Add return-tracking columns to Shoe
     op.add_column("Shoe", sa.Column("returnedAt", sa.DateTime, nullable=True))
