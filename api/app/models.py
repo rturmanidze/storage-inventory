@@ -582,7 +582,7 @@ class Shoe(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     shoeNumber = Column(String, nullable=False, default="0")
     # Auto-generated unique barcode: format 010101NNNN
-    # NNNN is EVEN for BLACK shoes, ODD for RED shoes
+    # NNNN is ODD for BLACK shoes, EVEN for RED shoes
     barcode = Column(String(32), unique=True, nullable=True)
     color = Column(String, nullable=False)
     material = Column(String, nullable=True)
