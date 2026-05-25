@@ -61,12 +61,31 @@ _ENUM_TYPES = [
     "CuttingCardEventType",
 ]
 
+# Columns that were created with an enum-typed server_default expression.
+# PostgreSQL stores these defaults as e.g. `'VIEWER'::"Role"`, so they keep a
+# dependency on the enum type even after the column data has been converted to
+# VARCHAR.  We must drop each default, convert the column, then re-add the
+# default as a plain string before we can drop the enum type.
+_ENUM_DEFAULTS = [
+    ("User", "role", "VIEWER"),
+    ("IssuedTo", "type", "PERSON"),
+    ("SerializedUnit", "status", "IN_STOCK"),
+    ("Shoe", "status", "IN_WAREHOUSE"),
+    ("Box", "boxType", "STANDARD"),
+]
+
 
 def upgrade() -> None:
     conn = op.get_bind()
 
-    # Convert every ENUM column to VARCHAR.  Using USING col::text makes the
-    # cast explicit and works regardless of whether the column is already VARCHAR.
+    # 1. Drop enum-typed column defaults so the enum types have no dependents.
+    for table, column, _default in _ENUM_DEFAULTS:
+        conn.execute(sa.text(
+            f'ALTER TABLE "{table}" ALTER COLUMN "{column}" DROP DEFAULT'
+        ))
+
+    # 2. Convert every ENUM column to VARCHAR.  Using USING col::text makes the
+    #    cast explicit and works regardless of whether the column is already VARCHAR.
     for table, column in _ENUM_COLUMNS:
         conn.execute(sa.text(
             f'ALTER TABLE "{table}" '
@@ -74,9 +93,15 @@ def upgrade() -> None:
             f'USING "{column}"::text'
         ))
 
-    # Drop the ENUM types now that no column references them.
+    # 3. Drop the ENUM types now that no column or default references them.
     for type_name in _ENUM_TYPES:
         conn.execute(sa.text(f'DROP TYPE IF EXISTS "{type_name}"'))
+
+    # 4. Re-add the defaults as plain VARCHAR strings.
+    for table, column, default in _ENUM_DEFAULTS:
+        conn.execute(sa.text(
+            f"ALTER TABLE \"{table}\" ALTER COLUMN \"{column}\" SET DEFAULT '{default}'"
+        ))
 
 
 def downgrade() -> None:
