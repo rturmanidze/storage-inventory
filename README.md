@@ -4,6 +4,8 @@ A **multi-warehouse storage inventory** web application with barcode/serial-numb
 built with NestJS + Prisma + React and packaged as Docker containers.  
 Runs on **Windows Server** via Docker Compose and is accessible from any device on the local network.
 
+📘 **User documentation:** see [USER_MANUAL.md](./USER_MANUAL.md)
+
 ---
 
 ## Tech stack
@@ -187,4 +189,3 @@ npm run dev
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:3010`.
-
