@@ -2,7 +2,43 @@
 set -e
 
 echo "Running database migrations..."
-find alembic -type d -name '__pycache__' -prune -exec rm -rf {} +
+
+# If a previous migration used a manual COMMIT (needed for ALTER TYPE ADD VALUE in
+# older PostgreSQL), Alembic's transaction tracking may have been disrupted, leaving
+# multiple rows in the alembic_version table.  When that happens, `alembic upgrade
+# head` fails with "overlaps" because both rows are treated as current heads and
+# their upgrade paths share common revisions.  The fix is to keep only the
+# numerically largest (most-recent) revision and let Alembic continue from there.
+python3 - <<'PYEOF'
+import os, sys
+try:
+    from sqlalchemy import create_engine, text
+    engine = create_engine(os.environ["DATABASE_URL"])
+    with engine.connect() as conn:
+        rows = [r[0] for r in conn.execute(text("SELECT version_num FROM alembic_version"))]
+        if len(rows) > 1:
+            def _ver_key(v):
+                try:
+                    return int(v.split("_")[0])
+                except Exception:
+                    return 0
+            latest = max(rows, key=_ver_key)
+            conn.execute(text("DELETE FROM alembic_version WHERE version_num != :v"), {"v": latest})
+            conn.commit()
+            print(f"alembic_version deduplication: removed stale entries, kept {latest!r}", flush=True)
+except Exception as exc:
+    print(f"alembic_version pre-check skipped: {exc}", flush=True)
+PYEOF
+
+# If the migration graph itself has multiple heads (e.g. due to stale .pyc
+# files or diverged branches), merge them into a single head automatically
+# before running the upgrade.
+ALEMBIC_HEADS=$(alembic heads 2>/dev/null | grep -c "(head)" || true)
+if [ "${ALEMBIC_HEADS:-0}" -gt 1 ]; then
+    echo "Multiple alembic graph heads detected (${ALEMBIC_HEADS}). Merging..."
+    alembic merge heads -m "auto_merge_entrypoint"
+fi
+
 alembic upgrade head
 
 echo "Running database seed..."

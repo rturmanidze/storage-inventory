@@ -2,12 +2,12 @@ import csv
 import io
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import CardColor, CardMaterial, Item, ItemBarcode, Location, Role, SerializedUnit, User, Warehouse
+from app.models import Item, ItemBarcode, Location, Role, SerializedUnit, User, Warehouse
 from app.schemas import ImportError, ImportResult
 
 router = APIRouter(prefix="/import", tags=["import"])
@@ -233,75 +233,6 @@ def import_placements(
                 errors.append(ImportError(row=row_num, message=f'Serial "{row["serial"]}" not found'))
                 continue
             unit.currentLocationId = location.id
-            db.commit()
-            success += 1
-        except Exception as e:
-            db.rollback()
-            errors.append(ImportError(row=row_num, message=str(e)))
-
-    return ImportResult(success=success, errors=errors)
-
-
-@router.post("/decks", response_model=ImportResult)
-def import_decks(
-    file: UploadFile = File(...),
-    request: Request = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER)),
-):
-    """Bulk-import deck/cutting-card additions from a CSV or XLSX file.
-
-    Required columns: ``color``, ``material``, ``deckCount``
-    Optional column:  ``note``
-
-    ``color``    — one of ``BLACK``, ``RED``, ``CUTTING``
-    ``material`` — one of ``PLASTIC``, ``PAPER``
-    ``deckCount``— positive integer (for CUTTING cards 1 unit = 1 cutting card)
-    """
-    from app.routers.cards import _auto_create_containers  # noqa: PLC0415
-
-    rows = _parse_file(file)
-    success = 0
-    errors: List[ImportError] = []
-
-    for i, row in enumerate(rows):
-        row_num = i + 2
-        try:
-            if not row.get("color") or not row.get("material") or not row.get("deckCount"):
-                errors.append(ImportError(row=row_num, message="Missing required fields: color, material, deckCount"))
-                continue
-
-            try:
-                color = CardColor(row["color"].strip().upper())
-            except ValueError:
-                errors.append(ImportError(row=row_num, message=f'Invalid color "{row["color"]}". Must be BLACK, RED, or CUTTING'))
-                continue
-
-            try:
-                material = CardMaterial(row["material"].strip().upper())
-            except ValueError:
-                errors.append(ImportError(row=row_num, message=f'Invalid material "{row["material"]}". Must be PLASTIC or PAPER'))
-                continue
-
-            try:
-                deck_count = int(row["deckCount"])
-                if deck_count <= 0:
-                    raise ValueError
-            except ValueError:
-                errors.append(ImportError(row=row_num, message=f'Invalid deckCount "{row["deckCount"]}". Must be a positive integer'))
-                continue
-
-            note = row.get("note") or None
-
-            _auto_create_containers(
-                db,
-                color=color,
-                material=material,
-                deck_count=deck_count,
-                note=note,
-                user_id=current_user.id,
-                request=request,
-            )
             db.commit()
             success += 1
         except Exception as e:

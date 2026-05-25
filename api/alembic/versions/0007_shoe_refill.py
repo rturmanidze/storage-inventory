@@ -21,11 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # PostgreSQL requires ALTER TYPE ... ADD VALUE to run outside a transaction block.
-    bind = op.get_bind()
-    bind.execute(sa.text("COMMIT"))
-
-    bind.execute(sa.text("ALTER TYPE \"ShoeStatus\" ADD VALUE IF NOT EXISTS 'REFILLED'"))
+    # ShoeStatus is now a plain VARCHAR column; no enum type alteration needed.
 
     # Tracking columns for shoe refill event
     op.add_column("Shoe", sa.Column("refilledAt", sa.DateTime, nullable=True))

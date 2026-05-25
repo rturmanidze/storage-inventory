@@ -16,7 +16,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "0008_containers"
 down_revision: Union[str, None] = "0007_shoe_refill"
@@ -25,44 +24,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # PostgreSQL requires ALTER TYPE … ADD VALUE to run outside a transaction.
-    bind = op.get_bind()
-    bind.execute(sa.text("COMMIT"))
-
-    # CardColor was created in migration 0003; guard makes this migration idempotent.
-    bind.execute(sa.text(
-        "DO $$ BEGIN "
-        "  CREATE TYPE \"CardColor\" AS ENUM ('BLACK', 'RED'); "
-        "EXCEPTION WHEN duplicate_object THEN NULL; "
-        "END $$"
-    ))
-
-    # New enum: CardMaterial
-    bind.execute(sa.text(
-        "DO $$ BEGIN "
-        "  CREATE TYPE \"CardMaterial\" AS ENUM ('PLASTIC', 'PAPER'); "
-        "EXCEPTION WHEN duplicate_object THEN NULL; "
-        "END $$"
-    ))
-
-    # New enum: ContainerEventType
-    bind.execute(sa.text(
-        "DO $$ BEGIN "
-        "  CREATE TYPE \"ContainerEventType\" AS ENUM "
-        "  ('CREATED', 'LOCKED', 'UNLOCKED', 'DECK_CONSUMED', 'ARCHIVED'); "
-        "EXCEPTION WHEN duplicate_object THEN NULL; "
-        "END $$"
-    ))
-
     # Container table
     op.create_table(
         "Container",
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("code", sa.String, nullable=False, unique=True),
-        sa.Column("color", postgresql.ENUM("BLACK", "RED", name="CardColor", create_type=False), nullable=False),
+        sa.Column("color", sa.String, nullable=False),
         sa.Column(
             "material",
-            postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
+            sa.String,
             nullable=False,
         ),
         sa.Column("decksRemaining", sa.Integer, nullable=False, server_default="200"),
@@ -83,11 +53,7 @@ def upgrade() -> None:
         sa.Column("containerId", sa.Integer, sa.ForeignKey("Container.id", ondelete="CASCADE"), nullable=False),
         sa.Column(
             "eventType",
-            postgresql.ENUM(
-                "CREATED", "LOCKED", "UNLOCKED", "DECK_CONSUMED", "ARCHIVED",
-                name="ContainerEventType",
-                create_type=False,
-            ),
+            sa.String,
             nullable=False,
         ),
         sa.Column("decksConsumed", sa.Integer, nullable=True),
@@ -103,7 +69,7 @@ def upgrade() -> None:
         "DeckEntry",
         sa.Column(
             "material",
-            postgresql.ENUM("PLASTIC", "PAPER", name="CardMaterial", create_type=False),
+            sa.String,
             nullable=True,
         ),
     )

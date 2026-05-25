@@ -1,15 +1,42 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import Role, Studio, User
+from app.models import Role, Shoe, ShoeStatus, Studio, User
 from app.schemas import StudioCreate, StudioOut, StudioUpdate
 
 router = APIRouter(prefix="/studios", tags=["studios"])
+
+# Statuses that represent an "active" shoe assigned to a studio
+_ACTIVE_STATUSES = (
+    ShoeStatus.SENT_TO_STUDIO,
+    ShoeStatus.IN_WAREHOUSE,
+    ShoeStatus.RETURNED,
+    ShoeStatus.REFILLED,
+    ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE,
+    ShoeStatus.PHYSICALLY_DAMAGED,
+)
+
+
+def _studio_with_count(db: Session, studio: Studio) -> StudioOut:
+    """Build a StudioOut including the count of active shoes assigned to this studio."""
+    count = int(
+        db.query(func.count(Shoe.id))
+        .filter(
+            Shoe.studioId == studio.id,
+            Shoe.status.in_(_ACTIVE_STATUSES),
+        )
+        .scalar()
+        or 0
+    )
+    out = StudioOut.model_validate(studio)
+    out.shoeCount = count
+    return out
 
 
 @router.get("", response_model=List[StudioOut])
@@ -17,7 +44,8 @@ def list_studios(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    return db.query(Studio).order_by(Studio.name).all()
+    studios = db.query(Studio).order_by(Studio.name).all()
+    return [_studio_with_count(db, s) for s in studios]
 
 
 @router.get("/{studio_id}", response_model=StudioOut)
@@ -29,7 +57,7 @@ def get_studio(
     studio = db.query(Studio).filter(Studio.id == studio_id).first()
     if not studio:
         raise HTTPException(status_code=404, detail="Studio not found")
-    return studio
+    return _studio_with_count(db, studio)
 
 
 @router.post("", response_model=StudioOut, status_code=status.HTTP_201_CREATED)
