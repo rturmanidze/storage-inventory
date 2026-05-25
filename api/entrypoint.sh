@@ -2,6 +2,7 @@
 set -e
 
 echo "Running database migrations..."
+find alembic -type d -name '__pycache__' -prune -exec rm -rf {} +
 alembic upgrade head
 
 echo "Running database seed..."
