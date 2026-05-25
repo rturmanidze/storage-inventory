@@ -9,7 +9,6 @@ from sqlalchemy import (
     Text,
     DateTime,
     ForeignKey,
-    Enum as SAEnum,
     UniqueConstraint,
     Index,
 )
@@ -60,7 +59,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False)
     email = Column(String, unique=True, nullable=False)
     passwordHash = Column(String, nullable=False)
-    role = Column(SAEnum(Role, name="Role", create_type=False), nullable=False, default=Role.VIEWER)
+    role = Column(String, nullable=False, default=Role.VIEWER)
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     updatedAt = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -145,7 +144,7 @@ class SerializedUnit(Base):
     itemId = Column(Integer, ForeignKey("Item.id"), nullable=False)
     serial = Column(String, unique=True, nullable=False)
     status = Column(
-        SAEnum(UnitStatus, name="UnitStatus", create_type=False),
+        String,
         nullable=False,
         default=UnitStatus.IN_STOCK,
     )
@@ -164,7 +163,7 @@ class IssuedTo(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     type = Column(
-        SAEnum(IssuedToType, name="IssuedToType", create_type=False),
+        String,
         nullable=False,
         default=IssuedToType.PERSON,
     )
@@ -178,7 +177,7 @@ class Movement(Base):
     __tablename__ = "Movement"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    type = Column(SAEnum(MovementType, name="MovementType", create_type=False), nullable=False)
+    type = Column(String, nullable=False)
     note = Column(Text, nullable=True)
     createdAt = Column(DateTime, nullable=False, default=datetime.utcnow)
     createdById = Column(Integer, ForeignKey("User.id"), nullable=False)
@@ -337,9 +336,9 @@ class DeckEntry(Base):
     __tablename__ = "DeckEntry"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    color = Column(String, nullable=False)
     material = Column(
-        SAEnum(CardMaterial, name="CardMaterial", create_type=False),
+        String,
         nullable=True,
     )
     deckCount = Column(Integer, nullable=False)
@@ -366,9 +365,9 @@ class Container(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     code = Column(String, unique=True, nullable=False)  # e.g. CONTAINER-R01
-    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
+    color = Column(String, nullable=False)
     material = Column(
-        SAEnum(CardMaterial, name="CardMaterial", create_type=False),
+        String,
         nullable=False,
     )
     decksRemaining = Column(Integer, nullable=False, default=CAPACITY)
@@ -408,16 +407,16 @@ class Box(Base):
     DECKS_PER_BOX = 8
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
-    material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=False)
+    color = Column(String, nullable=False)
+    material = Column(String, nullable=False)
     boxType = Column(
-        SAEnum(BoxType, name="BoxType", create_type=False),
+        String,
         nullable=False,
         default=BoxType.STANDARD,
     )
     # Only set for SPARE boxes — which single deck group this box holds
     spareDeckNumber = Column(
-        SAEnum(DeckNumber, name="DeckNumber", create_type=False),
+        String,
         nullable=True,
     )
     # For standard boxes: which container holds this box (null for spare boxes)
@@ -455,8 +454,8 @@ class ShredEvent(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     shoeId = Column(Integer, ForeignKey("Shoe.id", ondelete="SET NULL"), nullable=True)
-    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
-    material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=True)
+    color = Column(String, nullable=False)
+    material = Column(String, nullable=True)
     decksShredded = Column(Integer, nullable=False, default=DECKS_PER_SHRED)
     cardsShredded = Column(Integer, nullable=False, default=CARDS_PER_SHRED)
     shredById = Column(Integer, ForeignKey("User.id", ondelete="SET NULL"), nullable=True)
@@ -481,7 +480,7 @@ class ContainerEvent(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     containerId = Column(Integer, ForeignKey("Container.id", ondelete="CASCADE"), nullable=False)
     eventType = Column(
-        SAEnum(ContainerEventType, name="ContainerEventType", create_type=False),
+        String,
         nullable=False,
     )
     decksConsumed = Column(Integer, nullable=True)  # set for DECK_CONSUMED events
@@ -507,10 +506,10 @@ class Shoe(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     shoeNumber = Column(String, nullable=False, default="0")
-    color = Column(SAEnum(CardColor, name="CardColor", create_type=False), nullable=False)
-    material = Column(SAEnum(CardMaterial, name="CardMaterial", create_type=False), nullable=True)
+    color = Column(String, nullable=False)
+    material = Column(String, nullable=True)
     status = Column(
-        SAEnum(ShoeStatus, name="ShoeStatus", create_type=False),
+        String,
         nullable=False,
         default=ShoeStatus.IN_WAREHOUSE,
     )
