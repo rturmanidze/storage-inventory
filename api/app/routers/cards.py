@@ -524,15 +524,15 @@ _BARCODE_PREFIX = "010101"
 
 
 def _generate_barcode(db: Session, color: CardColor) -> str:
-    """Generate the next unique barcode following odd(BLACK)/even(RED) parity rule.
+    """Generate the next unique barcode following even(BLACK)/odd(RED) parity rule.
 
     Format: 010101NNNN where NNNN is a 4-digit zero-padded sequence number.
-    - BLACK shoes: NNNN must be ODD  (0001, 0003, 0005, …)
-    - RED shoes:   NNNN must be EVEN (0002, 0004, 0006, …)
+    - BLACK shoes: NNNN must be EVEN (0002, 0004, 0006, …)
+    - RED shoes:   NNNN must be ODD  (0001, 0003, 0005, …)
 
     Sequences are independent per parity so they always increment by 2.
     """
-    is_odd = color == CardColor.BLACK
+    is_odd = color == CardColor.RED
     start = 1 if is_odd else 2
 
     # Collect all existing sequence numbers for the same parity
@@ -914,7 +914,7 @@ def send_shoe_to_studio(
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
-        detail={"studioId": body.studioId, "studioName": studio.name, "color": shoe.color.value},
+        detail={"studioId": body.studioId, "studioName": studio.name, "color": shoe.color},
         request=request,
     )
     db.commit()
