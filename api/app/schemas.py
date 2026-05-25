@@ -490,7 +490,7 @@ class ShredEventOut(OrmBase):
 class CreateShoeRequest(BaseModel):
     color: CardColor
     material: CardMaterial
-    shoeNumber: str = Field(min_length=1, max_length=32)
+    shoeNumber: Optional[str] = Field(default=None, min_length=1, max_length=32)
 
 
 class SendShoeRequest(BaseModel):
