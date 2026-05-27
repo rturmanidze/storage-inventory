@@ -965,7 +965,7 @@ def return_shoe_from_studio(
         resource_id=shoe_id,
         detail={
             "studioId": shoe.studioId,
-            "color": shoe.color.value,
+            "color": shoe.color,
             "decksRestored": 0,
             "note": "Shoe returned; decks remain held by shoe (not restored to free pool)",
         },
