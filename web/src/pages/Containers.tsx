@@ -83,7 +83,7 @@ function EventTypeBadge({ type }: { type: ContainerEvent['eventType'] }) {
     DECK_CONSUMED: 'bg-amber-100 text-amber-700',
     ARCHIVED:      'bg-gray-100 text-gray-500',
   }
-  return <span className={`badge text-xs ${map[type]}`}>{type.replace('_', ' ')}</span>
+  return <span className={`badge text-xs ${map[type]}`}>{type.replace(/_/g, ' ')}</span>
 }
 
 // ── Schema ────────────────────────────────────────────────────────────────────
