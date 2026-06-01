@@ -13,6 +13,7 @@ interface Studio {
   description: string | null
   createdAt: string
   updatedAt: string
+  shoeCount: number
 }
 
 const schema = z.object({
@@ -169,6 +170,11 @@ export default function Studios() {
                     </button>
                   )}
                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
+                  👟 {studio.shoeCount} active shoe{studio.shoeCount !== 1 ? 's' : ''}
+                </span>
               </div>
               <p className="text-xs text-gray-400">
                 Created {new Date(studio.createdAt).toLocaleDateString()}
