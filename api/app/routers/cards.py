@@ -1302,7 +1302,7 @@ def recover_shoe(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": shoe.color.value,
+            "color": shoe.color,
             "shoeNumber": shoe.shoeNumber,
             "deckIncrease": 0,
             "note": "Shoe container recovered; cards remain destroyed",
