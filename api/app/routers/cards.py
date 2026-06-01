@@ -51,6 +51,7 @@ FORECAST_LOOKBACK_DAYS = 30
 
 
 def _enum_value(value):
+    """Return enum .value when present, otherwise return the original value (including None)."""
     return getattr(value, "value", value)
 
 
@@ -1039,7 +1040,7 @@ def _shred_cards_logic(
         resource_id=shoe_id,
         detail={
             "color": _enum_value(shoe.color),
-            "material": _enum_value(shoe.material) if shoe.material else None,
+            "material": _enum_value(shoe.material),
             "reason": body.reason,
             "decksShredded": DECKS_PER_SHOE,
             "cardsShredded": DECKS_PER_SHOE * CARDS_PER_DECK,
