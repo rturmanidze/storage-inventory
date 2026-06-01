@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_action
 from app.auth import get_current_user, require_roles
 from app.database import get_db
-from app.models import Box, BoxType, CardColor, CardMaterial, Container, DeckEntry, DeckNumber, Role, ShredEvent, Shoe, ShoeStatus, Studio, User
+from app.models import Box, BoxType, CardColor, CardMaterial, Container, CuttingCardContainer, DeckEntry, DeckNumber, Role, ShredEvent, Shoe, ShoeStatus, Studio, User
 from app.schemas import (
     AddDecksRequest,
     AddDecksResponse,
@@ -18,14 +18,18 @@ from app.schemas import (
     DeckColorStatus,
     DeckEntryOut,
     DeckLowStockResponse,
+    DeckTypeAvailability,
     DestroyShoeRequest,
     RecoverShoeRequest,
     RefillShoeRequest,
+    ReplaceCuttingCardsRequest,
     ReplaceShoeRequest,
     ReportPhysicalDamageRequest,
     ReturnShoeRequest,
     SendShoeRequest,
+    ShoeAssemblyAvailability,
     ShoeOut,
+    ShredEventOut,
     StockForecastColor,
     StockForecastResponse,
 )
@@ -42,17 +46,12 @@ CRITICAL_DECK_THRESHOLD = 200  # total decks across both colors
 # Legacy per-color threshold (kept for backward-compatible /low-stock endpoint)
 LOW_STOCK_THRESHOLD = 16  # 2 shoes worth of decks per color
 
-# Number of cutting cards consumed per shoe assembly
-CUTTING_CARDS_PER_SHOE = 2
-
 # Number of days used to calculate the average daily consumption rate
 FORECAST_LOOKBACK_DAYS = 30
 
 
-def _enum_value(value: Any) -> Optional[str]:
-    """Return Enum.value when present, otherwise return the raw string value."""
-    if value is None:
-        return None
+def _enum_value(value):
+    """Return enum .value when present, otherwise return the original value (including None)."""
     return getattr(value, "value", value)
 
 
@@ -102,29 +101,6 @@ def _get_deck_count_by_material(db: Session, material: CardMaterial) -> int:
         db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
         .filter(
             Container.material == material,
-            Container.archivedAt.is_(None),
-            Container.isLocked.is_(False),
-        )
-        .scalar()
-        or 0
-    )
-
-
-def _get_available_cutting_cards(db: Session) -> int:
-    """Return available cutting card count across all unlocked, non-archived CUTTING containers.
-
-    Cutting cards are universal — they have no BLACK/RED color distinction.
-    Containers with color=CUTTING hold cutting cards regardless of material.
-
-    Note: cutting cards are tracked using ``Container.decksRemaining`` where
-    each unit in ``decksRemaining`` represents one cutting card (not a 52-card
-    deck).  This reuses the existing FIFO container infrastructure without
-    model changes.
-    """
-    return int(
-        db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
-        .filter(
-            Container.color == CardColor.CUTTING,
             Container.archivedAt.is_(None),
             Container.isLocked.is_(False),
         )
@@ -273,7 +249,6 @@ def _build_inventory_summary(db: Session) -> CardInventorySummary:
         totalStockDecks=total_stock_decks,
         totalStockCards=total_stock_decks * CARDS_PER_DECK,
         lockedDecks=locked_decks,
-        cuttingCards=_get_available_cutting_cards(db),
     )
 
 
@@ -342,7 +317,7 @@ def _build_forecast(db: Session) -> StockForecastResponse:
 
 # ── Deck Entries ──────────────────────────────────────────────────────────────
 
-CONTAINER_CAPACITY = 176  # 22 boxes × 8 decks per box
+CONTAINER_CAPACITY = 192  # 24 boxes × 8 decks per box
 
 
 def _auto_create_containers(
@@ -421,7 +396,7 @@ def _auto_create_containers(
         db.add(container)
         db.flush()
 
-        # Create 22 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
+        # Create up to 24 standard boxes for this container (one box = 8 decks, Deck1–Deck8)
         boxes_to_create = batch // Box.DECKS_PER_BOX
         for _ in range(boxes_to_create):
             box = Box(
@@ -549,8 +524,78 @@ def get_low_stock(
 
 # ── Shoes ─────────────────────────────────────────────────────────────────────
 
+# Barcode prefix: Country(01) + City(01) + GameType(01)
+_BARCODE_PREFIX = "010101"
+
+
+def _generate_barcode(db: Session, color: CardColor) -> str:
+    """Generate the next unique barcode following even(BLACK)/odd(RED) parity rule.
+
+    Format: 010101NNNN where NNNN is a 4-digit zero-padded sequence number.
+    - BLACK shoes: NNNN must be EVEN (0002, 0004, 0006, …)
+    - RED shoes:   NNNN must be ODD  (0001, 0003, 0005, …)
+
+    Sequences are independent per parity so they always increment by 2.
+    """
+    is_odd = color == CardColor.RED
+    start = 1 if is_odd else 2
+
+    # Collect all existing sequence numbers for the same parity
+    rows = db.query(Shoe.barcode).filter(Shoe.barcode.like(f"{_BARCODE_PREFIX}%")).all()
+    used_sequence_numbers: set = set()
+    for (bc,) in rows:
+        if bc:
+            try:
+                n = int(bc[len(_BARCODE_PREFIX):])
+                if (n % 2 == 1) == is_odd:
+                    used_sequence_numbers.add(n)
+            except (ValueError, IndexError):
+                pass
+
+    n = start
+    while n in used_sequence_numbers:
+        n += 2
+        if n > 9999:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"Barcode sequence exhausted for {color.value} shoes "
+                    f"(max 4999 per color). Contact your system administrator."
+                ),
+            )
+    return f"{_BARCODE_PREFIX}{n:04d}"
+
+
 def _get_available_decks_by_material(db: Session, color: CardColor, material: CardMaterial) -> int:
-    """Available decks for a specific color+material combination."""
+    """Available decks for a specific color+material combination.
+
+    Uses container-based counting when containers exist — this is always accurate
+    even for shoes that have been refilled multiple times.  Falls back to the
+    legacy DeckEntry formula when no containers exist (pre-container deployments).
+    """
+    any_containers = int(
+        db.query(func.count(Container.id))
+        .filter(
+            Container.color == color,
+            Container.material == material,
+            Container.archivedAt.is_(None),
+        )
+        .scalar() or 0
+    )
+    if any_containers > 0:
+        return int(
+            db.query(func.coalesce(func.sum(Container.decksRemaining), 0))
+            .filter(
+                Container.color == color,
+                Container.material == material,
+                Container.archivedAt.is_(None),
+                Container.isLocked.is_(False),
+            )
+            .scalar()
+            or 0
+        )
+
+    # Legacy fallback: no containers — use DeckEntry-based formula
     total_added = int(
         db.query(func.coalesce(func.sum(DeckEntry.deckCount), 0))
         .filter(DeckEntry.color == color, DeckEntry.material == material)
@@ -578,7 +623,6 @@ def _get_available_decks_by_material(db: Session, color: CardColor, material: Ca
         .scalar()
         or 0
     )
-    # Extra correction for refilled shoes destroyed in a second (or later) cycle.
     extra_refill_destructions = int(
         db.query(func.count(Shoe.id))
         .filter(
@@ -640,40 +684,6 @@ def _consume_box_from_container(
     return box
 
 
-@router.get("/shoe-assembly-availability")
-def get_shoe_assembly_availability(
-    color: CardColor = Query(...),
-    material: CardMaterial = Query(...),
-    db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
-):
-    """Backward-compatible endpoint for legacy clients.
-
-    Returns whether a shoe can be assembled for a given color/material pair.
-    """
-    available_decks = _get_available_decks_by_material(db, color, material)
-    available_cutting_cards = _get_available_cutting_cards(db)
-    can_assemble = available_decks >= DECKS_PER_SHOE and available_cutting_cards >= CUTTING_CARDS_PER_SHOE
-
-    reason: Optional[str] = None
-    if available_decks < DECKS_PER_SHOE:
-        reason = f"Not enough {color.value} {material.value} decks. Available: {available_decks}, required: {DECKS_PER_SHOE}"
-    elif available_cutting_cards < CUTTING_CARDS_PER_SHOE:
-        reason = f"Cutting cards: {available_cutting_cards} available ({CUTTING_CARDS_PER_SHOE} required)"
-
-    return {
-        "color": color.value,
-        "material": material.value,
-        "available": can_assemble,
-        "canAssemble": can_assemble,
-        "availableDecks": available_decks,
-        "requiredDecks": DECKS_PER_SHOE,
-        "availableCuttingCards": available_cutting_cards,
-        "requiredCuttingCards": CUTTING_CARDS_PER_SHOE,
-        "reason": reason,
-    }
-
-
 @router.post("/shoes", response_model=ShoeOut, status_code=status.HTTP_201_CREATED)
 def create_shoe(
     body: CreateShoeRequest,
@@ -681,32 +691,49 @@ def create_shoe(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.OPERATIONS_MANAGER, Role.SHIFT_MANAGER)),
 ):
-    # Enforce container lock policy before any deck deduction
-    from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
-    validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE, material=body.material)
+    from app.routers.containers import (  # noqa: PLC0415
+        consume_cutting_cards,
+        consume_decks_fifo,
+        consume_one_deck_per_type,
+        validate_all_deck_types_available,
+        validate_containers_for_consumption,
+        validate_cutting_cards_available,
+    )
 
-    # Check availability for the specific color+material combination
-    available = _get_available_decks_by_material(db, body.color, body.material)
-    if available < DECKS_PER_SHOE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Not enough {body.color.value} {body.material.value} decks. "
-                f"Available: {available}, required: {DECKS_PER_SHOE}"
-            ),
-        )
+    # Determine whether the new 8-deck-type path is available
+    typed_count_q = db.query(func.count(Container.id)).filter(
+        Container.color == body.color,
+        Container.deckType.isnot(None),
+        Container.archivedAt.is_(None),
+    )
+    if body.material is not None:
+        typed_count_q = typed_count_q.filter(Container.material == body.material)
+    use_typed_path = int(typed_count_q.scalar() or 0) > 0
 
-    # Check cutting card availability (universal, no color/material distinction)
-    cutting_available = _get_available_cutting_cards(db)
-    if cutting_available < CUTTING_CARDS_PER_SHOE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cutting cards: {cutting_available} available ({CUTTING_CARDS_PER_SHOE} required)",
-        )
+    if use_typed_path:
+        # New path: validate all 8 deck types + cutting cards
+        validate_all_deck_types_available(db, body.color, material=body.material)
+        validate_cutting_cards_available(db)
+    else:
+        # Legacy FIFO path
+        validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE, material=body.material)
+        available = _get_available_decks_by_material(db, body.color, body.material)
+        if available < DECKS_PER_SHOE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Not enough {body.color.value} {body.material.value} decks. "
+                    f"Available: {available}, required: {DECKS_PER_SHOE}"
+                ),
+            )
 
-    requested_shoe_number = body.shoeNumber.strip() if body.shoeNumber else None
+    # Auto-generate barcode and derive shoeNumber from it
+    barcode = _generate_barcode(db, body.color)
+    shoe_number = str(int(barcode[len(_BARCODE_PREFIX):]))
+
     shoe = Shoe(
-        shoeNumber=requested_shoe_number or "0",
+        shoeNumber=shoe_number,
+        barcode=barcode,
         color=body.color,
         material=body.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -715,63 +742,86 @@ def create_shoe(
     )
     db.add(shoe)
     db.flush()
-    if not requested_shoe_number:
-        shoe.shoeNumber = str(shoe.id)
-        db.flush()
 
-    # FIFO container consumption filtered by color AND material
-    container = consume_decks_fifo(
-        db, body.color, DECKS_PER_SHOE,
-        material=body.material,
-        user_id=current_user.id,
-        shoe_id=shoe.id,
-        request=request,
-    )
-    if container is None:
-        # Race condition: another transaction consumed the last decks between pre-check and here
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Not enough decks in unlocked containers. Please unlock another container.",
+    if use_typed_path:
+        # New path: consume 1 deck per deck type from 8 containers + cutting cards
+        result = consume_one_deck_per_type(
+            db, body.color, body.material,
+            user_id=current_user.id,
+            shoe_id=shoe.id,
         )
-    shoe.containerId = container.id
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough decks in unlocked containers. Please unlock another container.",
+            )
+        # Set containerId to the first container for legacy field compatibility
+        shoe.containerId = next(iter(result.values())).id
 
-    # Consume cutting cards from CUTTING containers in FIFO order (material-agnostic)
-    cutting_container = consume_decks_fifo(
-        db, CardColor.CUTTING, CUTTING_CARDS_PER_SHOE,
-        material=None,
-        user_id=current_user.id,
-        shoe_id=shoe.id,
-        request=request,
-    )
-    if cutting_container is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cutting cards: 0 available ({CUTTING_CARDS_PER_SHOE} required)",
+        cc_container = consume_cutting_cards(db, user_id=current_user.id, shoe_id=shoe.id)
+        if cc_container is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough cutting cards available. Please add cutting cards to continue.",
+            )
+        shoe.cuttingCardContainerId = cc_container.id
+
+        log_action(
+            db,
+            "CREATE_SHOE",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=shoe.id,
+            detail={
+                "color": body.color.value,
+                "material": body.material.value,
+                "decksConsumed": DECKS_PER_SHOE,
+                "shoeNumber": shoe.shoeNumber,
+                "barcode": shoe.barcode,
+                "cuttingCardsDeducted": 2,
+                "cuttingCardContainerId": cc_container.id,
+                "containers": {dt.value: c.id for dt, c in result.items()},
+            },
+            request=request,
         )
-    shoe.cuttingCardCount = CUTTING_CARDS_PER_SHOE
+    else:
+        # Legacy FIFO path
+        container = consume_decks_fifo(
+            db, body.color, DECKS_PER_SHOE,
+            material=body.material,
+            user_id=current_user.id,
+            shoe_id=shoe.id,
+            request=request,
+        )
+        if container is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough decks in unlocked containers. Please unlock another container.",
+            )
+        shoe.containerId = container.id
 
-    # Assign a box to this shoe (if boxes are available)
-    box = _consume_box_from_container(db, body.color, body.material, current_user.id, shoe.id)
-    if box is not None:
-        shoe.boxId = box.id
+        box = _consume_box_from_container(db, body.color, body.material, current_user.id, shoe.id)
+        if box is not None:
+            shoe.boxId = box.id
 
-    log_action(
-        db,
-        "CREATE_SHOE",
-        user_id=current_user.id,
-        resource_type="shoe",
-        resource_id=shoe.id,
-        detail={
-            "color": body.color.value,
-            "material": body.material.value,
-            "decksConsumed": DECKS_PER_SHOE,
-            "cuttingCardsConsumed": CUTTING_CARDS_PER_SHOE,
-            "shoeNumber": shoe.shoeNumber,
-            "containerId": container.id,
-            "containerCode": container.code,
-        },
-        request=request,
-    )
+        log_action(
+            db,
+            "CREATE_SHOE",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=shoe.id,
+            detail={
+                "color": body.color.value,
+                "material": body.material.value,
+                "decksConsumed": DECKS_PER_SHOE,
+                "shoeNumber": shoe.shoeNumber,
+                "barcode": shoe.barcode,
+                "containerId": container.id,
+                "containerCode": container.code,
+            },
+            request=request,
+        )
+
     db.commit()
     db.refresh(shoe)
     return shoe
@@ -793,6 +843,26 @@ def list_shoes(
     if studioId:
         q = q.filter(Shoe.studioId == studioId)
     return q.order_by(Shoe.createdAt.desc()).all()
+
+
+@router.get("/shred-events", response_model=List[ShredEventOut])
+def list_shred_events(
+    shoeId: Optional[int] = Query(None),
+    color: Optional[CardColor] = Query(None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """List all shredding events.  Optionally filter by shoe or color.
+
+    Each shredding operation creates a separate event so the full lifecycle
+    history is preserved across multiple shred → refill cycles.
+    """
+    q = db.query(ShredEvent)
+    if shoeId is not None:
+        q = q.filter(ShredEvent.shoeId == shoeId)
+    if color is not None:
+        q = q.filter(ShredEvent.color == color)
+    return q.order_by(ShredEvent.shredAt.desc()).all()
 
 
 @router.get("/shoes/{shoe_id}", response_model=ShoeOut)
@@ -829,7 +899,7 @@ def send_shoe_to_studio(
     ):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot send a shoe in status '{_enum_value(shoe.status)}' to a studio",
+            detail=f"Cannot send a shoe in status '{shoe.status.value}' to a studio",
         )
     if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED, ShoeStatus.REFILLED):
         raise HTTPException(status_code=400, detail="Shoe is not in a sendable state")
@@ -849,7 +919,7 @@ def send_shoe_to_studio(
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
-        detail={"studioId": body.studioId, "studioName": studio.name, "color": _enum_value(shoe.color)},
+        detail={"studioId": body.studioId, "studioName": studio.name, "color": shoe.color},
         request=request,
     )
     db.commit()
@@ -900,7 +970,7 @@ def return_shoe_from_studio(
         resource_id=shoe_id,
         detail={
             "studioId": shoe.studioId,
-            "color": _enum_value(shoe.color),
+            "color": shoe.color,
             "decksRestored": 0,
             "note": "Shoe returned; decks remain held by shoe (not restored to free pool)",
         },
@@ -1047,32 +1117,46 @@ def replace_shoe(
             status_code=400,
             detail=(
                 "Only physically destroyed shoes can be replaced with a new shoe. "
-                "Current status: " + _enum_value(original.status) + ". "
+                "Current status: " + original.status.value + ". "
                 "For shoes with destroyed cards use the recover-shoe endpoint."
             ),
         )
 
     # Enforce container lock policy — same rules as new shoe creation
-    from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
-    validate_containers_for_consumption(db, original.color, DECKS_PER_SHOE, material=original.material)
+    from app.routers.containers import (  # noqa: PLC0415
+        consume_cutting_cards,
+        consume_decks_fifo,
+        consume_one_deck_per_type,
+        validate_all_deck_types_available,
+        validate_containers_for_consumption,
+        validate_cutting_cards_available,
+    )
 
-    available = _get_available_decks(db, original.color)
-    if available < DECKS_PER_SHOE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Not enough {_enum_value(original.color)} decks. Available: {available}, required: {DECKS_PER_SHOE}",
-        )
+    # Determine whether the new 8-deck-type path is available
+    typed_count_q = db.query(func.count(Container.id)).filter(
+        Container.color == original.color,
+        Container.deckType.isnot(None),
+        Container.archivedAt.is_(None),
+    )
+    if original.material is not None:
+        typed_count_q = typed_count_q.filter(Container.material == original.material)
+    use_typed_path = int(typed_count_q.scalar() or 0) > 0
 
-    # Check cutting card availability
-    cutting_available = _get_available_cutting_cards(db)
-    if cutting_available < CUTTING_CARDS_PER_SHOE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cutting cards: {cutting_available} available ({CUTTING_CARDS_PER_SHOE} required)",
-        )
+    if use_typed_path:
+        validate_all_deck_types_available(db, original.color, material=original.material)
+        validate_cutting_cards_available(db)
+    else:
+        validate_containers_for_consumption(db, original.color, DECKS_PER_SHOE, material=original.material)
+        available = _get_available_decks(db, original.color)
+        if available < DECKS_PER_SHOE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Not enough {original.color.value} decks. Available: {available}, required: {DECKS_PER_SHOE}",
+            )
 
     new_shoe = Shoe(
         shoeNumber=original.shoeNumber,
+        barcode=_generate_barcode(db, original.color),
         color=original.color,
         material=original.material,
         status=ShoeStatus.IN_WAREHOUSE,
@@ -1093,55 +1177,82 @@ def replace_shoe(
     db.add(new_shoe)
     db.flush()
 
-    # FIFO container consumption
-    container = consume_decks_fifo(
-        db, original.color, DECKS_PER_SHOE,
-        material=original.material,
-        user_id=current_user.id,
-        shoe_id=new_shoe.id,
-        request=request,
-    )
-    if container is None:
-        # Race condition: another transaction consumed the last decks between pre-check and here
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Not enough decks in unlocked containers. Please unlock another container.",
+    if use_typed_path:
+        # New path: consume 1 deck per deck type + cutting cards
+        result = consume_one_deck_per_type(
+            db, original.color, original.material,
+            user_id=current_user.id,
+            shoe_id=new_shoe.id,
         )
-    new_shoe.containerId = container.id
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough decks in unlocked containers. Please unlock another container.",
+            )
+        new_shoe.containerId = next(iter(result.values())).id
 
-    # Consume cutting cards from CUTTING containers in FIFO order (material-agnostic)
-    cutting_container = consume_decks_fifo(
-        db, CardColor.CUTTING, CUTTING_CARDS_PER_SHOE,
-        material=None,
-        user_id=current_user.id,
-        shoe_id=new_shoe.id,
-        request=request,
-    )
-    if cutting_container is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cutting cards: 0 available ({CUTTING_CARDS_PER_SHOE} required)",
+        cc_container = consume_cutting_cards(db, user_id=current_user.id, shoe_id=new_shoe.id)
+        if cc_container is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough cutting cards available. Please add cutting cards to continue.",
+            )
+        new_shoe.cuttingCardContainerId = cc_container.id
+
+        log_action(
+            db,
+            "REPLACE_SHOE",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=new_shoe.id,
+            detail={
+                "originalShoeId": shoe_id,
+                "shoeNumber": new_shoe.shoeNumber,
+                "barcode": new_shoe.barcode,
+                "color": new_shoe.color.value,
+                "material": new_shoe.material.value if new_shoe.material else None,
+                "decksConsumed": DECKS_PER_SHOE,
+                "cuttingCardsDeducted": 2,
+                "sentToStudio": body.studioId,
+                "containers": {dt.value: c.id for dt, c in result.items()},
+            },
+            request=request,
         )
-    new_shoe.cuttingCardCount = CUTTING_CARDS_PER_SHOE
+    else:
+        # FIFO container consumption
+        container = consume_decks_fifo(
+            db, original.color, DECKS_PER_SHOE,
+            material=original.material,
+            user_id=current_user.id,
+            shoe_id=new_shoe.id,
+            request=request,
+        )
+        if container is None:
+            # Race condition: another transaction consumed the last decks between pre-check and here
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough decks in unlocked containers. Please unlock another container.",
+            )
+        new_shoe.containerId = container.id
 
-    log_action(
-        db,
-        "REPLACE_SHOE",
-        user_id=current_user.id,
-        resource_type="shoe",
-        resource_id=new_shoe.id,
-        detail={
-            "originalShoeId": shoe_id,
-            "shoeNumber": new_shoe.shoeNumber,
-            "color": _enum_value(new_shoe.color),
-            "material": _enum_value(new_shoe.material),
-            "decksConsumed": DECKS_PER_SHOE,
-            "cuttingCardsConsumed": CUTTING_CARDS_PER_SHOE,
-            "sentToStudio": body.studioId,
-            "containerId": container.id,
-        },
-        request=request,
-    )
+        log_action(
+            db,
+            "REPLACE_SHOE",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=new_shoe.id,
+            detail={
+                "originalShoeId": shoe_id,
+                "shoeNumber": new_shoe.shoeNumber,
+                "barcode": new_shoe.barcode,
+                "color": new_shoe.color.value,
+                "material": new_shoe.material.value if new_shoe.material else None,
+                "decksConsumed": DECKS_PER_SHOE,
+                "sentToStudio": body.studioId,
+                "containerId": container.id,
+            },
+            request=request,
+        )
     db.commit()
     db.refresh(new_shoe)
     return new_shoe
@@ -1176,7 +1287,7 @@ def recover_shoe(
             status_code=400,
             detail=(
                 "Only shoes with status CARDS_DESTROYED can be recovered. "
-                "Current status: " + _enum_value(shoe.status)
+                "Current status: " + shoe.status.value
             ),
         )
 
@@ -1191,7 +1302,7 @@ def recover_shoe(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": _enum_value(shoe.color),
+            "color": shoe.color,
             "shoeNumber": shoe.shoeNumber,
             "deckIncrease": 0,
             "note": "Shoe container recovered; cards remain destroyed",
@@ -1235,32 +1346,45 @@ def refill_shoe(
             status_code=400,
             detail=(
                 "Only empty shoes (EMPTY_SHOE_IN_WAREHOUSE) can be refilled. "
-                "Current status: " + _enum_value(shoe.status) + ". "
+                "Current status: " + shoe.status.value + ". "
                 "Recover the shoe container first if cards were just destroyed."
             ),
         )
 
     # Enforce container lock policy — same rules as new shoe creation
-    from app.routers.containers import consume_decks_fifo, validate_containers_for_consumption  # noqa: PLC0415
-    validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE, material=body.material)
+    from app.routers.containers import (  # noqa: PLC0415
+        consume_cutting_cards,
+        consume_decks_fifo,
+        consume_one_deck_per_type,
+        validate_all_deck_types_available,
+        validate_containers_for_consumption,
+        validate_cutting_cards_available,
+    )
 
-    available = _get_available_decks_by_material(db, body.color, body.material)
-    if available < DECKS_PER_SHOE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Not enough {body.color.value} {body.material.value} decks to refill. "
-                f"Available: {available}, required: {DECKS_PER_SHOE}"
-            ),
-        )
+    # Determine whether the new 8-deck-type path is available
+    typed_count_q = db.query(func.count(Container.id)).filter(
+        Container.color == body.color,
+        Container.deckType.isnot(None),
+        Container.archivedAt.is_(None),
+    )
+    if body.material is not None:
+        typed_count_q = typed_count_q.filter(Container.material == body.material)
+    use_typed_path = int(typed_count_q.scalar() or 0) > 0
 
-    # Check cutting card availability
-    cutting_available = _get_available_cutting_cards(db)
-    if cutting_available < CUTTING_CARDS_PER_SHOE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cutting cards: {cutting_available} available ({CUTTING_CARDS_PER_SHOE} required)",
-        )
+    if use_typed_path:
+        validate_all_deck_types_available(db, body.color, material=body.material)
+        validate_cutting_cards_available(db)
+    else:
+        validate_containers_for_consumption(db, body.color, DECKS_PER_SHOE, material=body.material)
+        available = _get_available_decks_by_material(db, body.color, body.material)
+        if available < DECKS_PER_SHOE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Not enough {body.color.value} {body.material.value} decks to refill. "
+                    f"Available: {available}, required: {DECKS_PER_SHOE}"
+                ),
+            )
 
     shoe.color = body.color
     shoe.material = body.material
@@ -1272,60 +1396,83 @@ def refill_shoe(
 
     db.flush()
 
-    # Deduct 8 decks from containers in FIFO order — identical logic to new shoe creation
-    container = consume_decks_fifo(
-        db, body.color, DECKS_PER_SHOE,
-        material=body.material,
-        user_id=current_user.id,
-        shoe_id=shoe.id,
-        request=request,
-    )
-    if container is None:
-        # Race condition: another transaction consumed the last decks between pre-check and here
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Not enough decks in unlocked containers. Please unlock another container.",
+    if use_typed_path:
+        # New path: consume 1 deck per deck type + cutting cards
+        result = consume_one_deck_per_type(
+            db, body.color, body.material,
+            user_id=current_user.id,
+            shoe_id=shoe.id,
         )
-    shoe.containerId = container.id
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough decks in unlocked containers. Please unlock another container.",
+            )
+        shoe.containerId = next(iter(result.values())).id
 
-    # Consume cutting cards from CUTTING containers in FIFO order (material-agnostic)
-    cutting_container = consume_decks_fifo(
-        db, CardColor.CUTTING, CUTTING_CARDS_PER_SHOE,
-        material=None,
-        user_id=current_user.id,
-        shoe_id=shoe.id,
-        request=request,
-    )
-    if cutting_container is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cutting cards: 0 available ({CUTTING_CARDS_PER_SHOE} required)",
+        cc_container = consume_cutting_cards(db, user_id=current_user.id, shoe_id=shoe.id)
+        if cc_container is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough cutting cards available. Please add cutting cards to continue.",
+            )
+        shoe.cuttingCardContainerId = cc_container.id
+
+        log_action(
+            db,
+            "REFILL_SHOE",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=shoe_id,
+            detail={
+                "shoeNumber": shoe.shoeNumber,
+                "color": body.color.value,
+                "material": body.material.value,
+                "decksConsumed": DECKS_PER_SHOE,
+                "cardsLoaded": DECKS_PER_SHOE * CARDS_PER_DECK,
+                "cuttingCardsDeducted": 2,
+                "cuttingCardContainerId": cc_container.id,
+                "containers": {dt.value: c.id for dt, c in result.items()},
+            },
+            request=request,
         )
-    shoe.cuttingCardCount = CUTTING_CARDS_PER_SHOE
+    else:
+        # Legacy FIFO path
+        container = consume_decks_fifo(
+            db, body.color, DECKS_PER_SHOE,
+            material=body.material,
+            user_id=current_user.id,
+            shoe_id=shoe.id,
+            request=request,
+        )
+        if container is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough decks in unlocked containers. Please unlock another container.",
+            )
+        shoe.containerId = container.id
 
-    # Assign a box to this shoe (if boxes are available)
-    box = _consume_box_from_container(db, body.color, body.material, current_user.id, shoe.id)
-    if box is not None:
-        shoe.boxId = box.id
+        box = _consume_box_from_container(db, body.color, body.material, current_user.id, shoe.id)
+        if box is not None:
+            shoe.boxId = box.id
 
-    log_action(
-        db,
-        "REFILL_SHOE",
-        user_id=current_user.id,
-        resource_type="shoe",
-        resource_id=shoe_id,
-        detail={
-            "shoeNumber": shoe.shoeNumber,
-            "color": body.color.value,
-            "material": body.material.value,
-            "decksConsumed": DECKS_PER_SHOE,
-            "cuttingCardsConsumed": CUTTING_CARDS_PER_SHOE,
-            "cardsLoaded": DECKS_PER_SHOE * CARDS_PER_DECK,
-            "containerId": container.id,
-            "containerCode": container.code,
-        },
-        request=request,
-    )
+        log_action(
+            db,
+            "REFILL_SHOE",
+            user_id=current_user.id,
+            resource_type="shoe",
+            resource_id=shoe_id,
+            detail={
+                "shoeNumber": shoe.shoeNumber,
+                "color": body.color.value,
+                "material": body.material.value,
+                "decksConsumed": DECKS_PER_SHOE,
+                "cardsLoaded": DECKS_PER_SHOE * CARDS_PER_DECK,
+                "containerId": container.id,
+                "containerCode": container.code,
+            },
+            request=request,
+        )
 
     # Optionally send directly to a studio
     if body.studioId is not None:
@@ -1345,7 +1492,7 @@ def refill_shoe(
             detail={
                 "studioId": body.studioId,
                 "studioName": studio.name,
-                "color": _enum_value(shoe.color),
+                "color": shoe.color.value,
                 "sentAfterRefill": True,
             },
             request=request,
@@ -1395,7 +1542,7 @@ def report_physical_damage(
             detail=(
                 "Physical damage can only be reported for shoes in RETURNED or "
                 "EMPTY_SHOE_IN_WAREHOUSE status. "
-                "Current status: " + _enum_value(shoe.status) + ". "
+                "Current status: " + shoe.status.value + ". "
                 "Ensure cards are returned or destroyed before reporting physical damage."
             ),
         )
@@ -1422,10 +1569,10 @@ def report_physical_damage(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": _enum_value(shoe.color),
+            "color": shoe.color.value,
             "shoeNumber": shoe.shoeNumber,
             "reason": body.reason,
-            "priorStatus": _enum_value(prior_status),
+            "priorStatus": prior_status.value,
             "decksAccountedFor": prior_status == ShoeStatus.RETURNED,
         },
         request=request,
@@ -1463,7 +1610,7 @@ def confirm_physical_destroy(
             status_code=400,
             detail=(
                 "Only shoes in PHYSICALLY_DAMAGED status can be confirmed as destroyed. "
-                "Current status: " + _enum_value(shoe.status) + ". "
+                "Current status: " + shoe.status.value + ". "
                 "Use the report-physical-damage endpoint first."
             ),
         )
@@ -1479,7 +1626,7 @@ def confirm_physical_destroy(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": _enum_value(shoe.color),
+            "color": shoe.color.value,
             "shoeNumber": shoe.shoeNumber,
             "damageReason": shoe.physicalDamageReason,
             "warning": "Irreversible — shoe fully removed from service",
@@ -1492,6 +1639,149 @@ def confirm_physical_destroy(
 
 
 # ── Stock Forecast ─────────────────────────────────────────────────────────────
+
+@router.get("/shoe-assembly-availability", response_model=ShoeAssemblyAvailability)
+def get_shoe_assembly_availability(
+    color: CardColor = Query(...),
+    material: CardMaterial = Query(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Pre-flight availability check for 8-container shoe assembly.
+
+    Returns whether all 8 deck types (Deck1–Deck8) have unlocked containers
+    available for the given color+material, plus cutting card availability.
+    """
+    from app.routers.containers import CUTTING_CARDS_PER_SHOE  # noqa: PLC0415
+
+    deck_availability = []
+    missing: list = []
+
+    for deck_type in DeckNumber:
+        q_count = db.query(func.count(Container.id)).filter(
+            Container.color == color,
+            Container.deckType == deck_type,
+            Container.archivedAt.is_(None),
+            Container.isLocked.is_(False),
+            Container.decksRemaining > 0,
+            Container.material == material,
+        )
+        count = int(q_count.scalar() or 0)
+
+        q_decks = db.query(func.coalesce(func.sum(Container.decksRemaining), 0)).filter(
+            Container.color == color,
+            Container.deckType == deck_type,
+            Container.archivedAt.is_(None),
+            Container.isLocked.is_(False),
+            Container.decksRemaining > 0,
+            Container.material == material,
+        )
+        decks = int(q_decks.scalar() or 0)
+
+        deck_availability.append(DeckTypeAvailability(
+            deckType=deck_type,
+            available=count > 0,
+            containersAvailable=count,
+            decksAvailable=decks,
+        ))
+        if count == 0:
+            missing.append(deck_type)
+
+    total_cc = int(
+        db.query(func.coalesce(func.sum(CuttingCardContainer.availableCards), 0))
+        .filter(
+            CuttingCardContainer.isLocked.is_(False),
+            CuttingCardContainer.archivedAt.is_(None),
+        )
+        .scalar()
+        or 0
+    )
+
+    can_create = len(missing) == 0 and total_cc >= CUTTING_CARDS_PER_SHOE
+
+    return ShoeAssemblyAvailability(
+        canCreate=can_create,
+        deckAvailability=deck_availability,
+        cuttingCardsAvailable=total_cc,
+        missingDeckTypes=missing,
+    )
+
+
+@router.post("/shoes/{shoe_id}/replace-cutting-cards", response_model=ShoeOut)
+def replace_cutting_cards(
+    shoe_id: int,
+    body: ReplaceCuttingCardsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(Role.ADMIN, Role.MANAGER, Role.SHIFT_MANAGER, Role.SHUFFLER)),
+):
+    """Replace only the cutting cards in a shoe.
+
+    Deducts 2 new cutting cards from the cutting card inventory.
+    The shoe's decks are NOT changed.  Valid for any shoe that is still active
+    (not shredded, destroyed, or physically damaged/destroyed).
+    """
+    from app.routers.containers import (  # noqa: PLC0415
+        CUTTING_CARDS_PER_SHOE,
+        consume_cutting_cards,
+        validate_cutting_cards_available,
+    )
+    from app.models import CuttingCardEventType  # noqa: PLC0415
+
+    shoe = db.query(Shoe).filter(Shoe.id == shoe_id).first()
+    if not shoe:
+        raise HTTPException(status_code=404, detail="Shoe not found")
+    if shoe.status in (
+        ShoeStatus.CARDS_DESTROYED,
+        ShoeStatus.DESTROYED,
+        ShoeStatus.EMPTY_SHOE_IN_WAREHOUSE,
+        ShoeStatus.PHYSICALLY_DAMAGED,
+        ShoeStatus.PHYSICALLY_DESTROYED,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Cannot replace cutting cards for a shoe in status '{shoe.status.value}'. "
+                "Only active shoes (IN_WAREHOUSE, SENT_TO_STUDIO, RETURNED, REFILLED) support this operation."
+            ),
+        )
+
+    validate_cutting_cards_available(db)
+
+    cc_container = consume_cutting_cards(
+        db,
+        cards_needed=CUTTING_CARDS_PER_SHOE,
+        user_id=current_user.id,
+        shoe_id=shoe.id,
+        event_type=CuttingCardEventType.REPLACED,
+        note=body.note or f"Cutting cards replaced for shoe #{shoe.shoeNumber}",
+    )
+    if cc_container is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Not enough cutting cards available. Please add cutting cards to continue.",
+        )
+    shoe.cuttingCardContainerId = cc_container.id
+
+    log_action(
+        db,
+        "REPLACE_CUTTING_CARDS",
+        user_id=current_user.id,
+        resource_type="shoe",
+        resource_id=shoe_id,
+        detail={
+            "shoeNumber": shoe.shoeNumber,
+            "color": shoe.color.value,
+            "cuttingCardsDeducted": CUTTING_CARDS_PER_SHOE,
+            "cuttingCardContainerId": cc_container.id,
+            "note": body.note,
+        },
+        request=request,
+    )
+    db.commit()
+    db.refresh(shoe)
+    return shoe
+
 
 @router.get("/forecast", response_model=StockForecastResponse)
 def get_stock_forecast(
