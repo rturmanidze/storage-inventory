@@ -19,22 +19,9 @@ type ShoeStatus =
   | 'PHYSICALLY_DAMAGED'
   | 'PHYSICALLY_DESTROYED'
 
-interface ShredEvent {
-  id: number
-  shoeId: number | null
-  color: 'BLACK' | 'RED'
-  material: 'PLASTIC' | 'PAPER' | null
-  decksShredded: number
-  cardsShredded: number
-  note: string | null
-  shredAt: string
-  shredBy: { id: number; username: string } | null
-}
-
 interface Shoe {
   id: number
   shoeNumber: string
-  barcode: string | null
   color: 'BLACK' | 'RED'
   status: ShoeStatus
   studioId: number | null
@@ -51,7 +38,6 @@ interface Shoe {
   recoveredBy: { id: number; username: string } | null
   physicalDamageBy: { id: number; username: string } | null
   physicallyDestroyedBy: { id: number; username: string } | null
-  shredEvents: ShredEvent[]
 }
 
 function ColorBadge({ color }: { color: 'BLACK' | 'RED' }) {
@@ -192,8 +178,8 @@ export default function DestroyedShoes() {
           <div className="text-sm text-amber-700">
             <p className="font-semibold">Shredded Decks — shoe container remains</p>
             <p className="mt-0.5 text-amber-600">
-              Use <strong>Recover Shoe (Empty)</strong> to retrieve the physical shoe container after shredding.
-              The shoe can then be refilled and reused for unlimited cycles. No deck inventory increase on recovery.
+              Use <strong>Recover Shoe (Empty)</strong> to retrieve the physical shoe container.
+              This can only be done <strong>once</strong> per shredded-cards record. No deck inventory increase.
             </p>
           </div>
         </div>
@@ -251,8 +237,7 @@ export default function DestroyedShoes() {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shoe #</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Shredding History</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Latest Event</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Event Date</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Reason</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">By</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created At</th>
@@ -270,14 +255,11 @@ export default function DestroyedShoes() {
                 const byUser = isCardsDestroyed
                   ? (shoe.destroyedBy?.username ?? '—')
                   : (shoe.physicallyDestroyedBy?.username ?? '—')
-                const shredEvents = shoe.shredEvents ?? []
-                const shredCount = shredEvents.length
                 return (
                   <tr key={shoe.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 font-mono font-semibold text-gray-700">
                       Shoe #{shoe.shoeNumber}
-                      {shoe.barcode && <p className="text-2xs text-gray-400 font-normal">{shoe.barcode}</p>}
-                      <span className="text-2xs text-gray-300">id:{shoe.id}</span>
+                      <span className="ml-2 text-2xs text-gray-300">id:{shoe.id}</span>
                     </td>
                     <td className="px-4 py-3"><ColorBadge color={shoe.color} /></td>
                     <td className="px-4 py-3">
@@ -288,25 +270,8 @@ export default function DestroyedShoes() {
                       )}
                       {isCardsDestroyed && shoe.recoveredAt && (
                         <p className="text-2xs text-emerald-600 mt-0.5">
-                          Recovered {new Date(shoe.recoveredAt).toLocaleDateString()}
+                          Shoe recovered {new Date(shoe.recoveredAt).toLocaleDateString()}
                         </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {shredCount > 0 ? (
-                        <div className="space-y-1">
-                          {shredEvents.map((ev, idx) => (
-                            <div key={ev.id} className="text-2xs text-gray-500 flex items-center gap-1">
-                              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-100 text-rose-600 font-semibold text-2xs flex-shrink-0">
-                                {idx + 1}
-                              </span>
-                              <span>{new Date(ev.shredAt).toLocaleDateString()}</span>
-                              {ev.shredBy && <span className="text-gray-400">by {ev.shredBy.username}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-gray-300 text-xs">—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">{eventDate}</td>
@@ -319,7 +284,7 @@ export default function DestroyedShoes() {
                     </td>
                     {canEdit && (
                       <td className="px-4 py-3 text-right">
-                        {isCardsDestroyed && (
+                        {isCardsDestroyed && !shoe.recoveredAt && (
                           <button
                             className="btn-sm btn-secondary"
                             onClick={() => setRecoverShoe(shoe)}
@@ -356,7 +321,7 @@ export default function DestroyedShoes() {
               The physical <strong>{recoverShoe.color === 'BLACK' ? 'Black' : 'Red'}</strong> shoe container
               will be recovered and marked as <strong>Empty Shoe in Warehouse</strong>.
               Cards remain destroyed — <strong>no deck inventory increase</strong>.
-              After recovery the shoe can be refilled and reused for another cycle.
+              This action can only be performed <strong>once</strong>.
             </p>
             <div className="flex justify-end gap-3">
               <button className="btn-ghost" onClick={() => setRecoverShoe(null)}>Cancel</button>
