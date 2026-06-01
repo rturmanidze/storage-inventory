@@ -50,6 +50,10 @@ LOW_STOCK_THRESHOLD = 16  # 2 shoes worth of decks per color
 FORECAST_LOOKBACK_DAYS = 30
 
 
+def _enum_value(value):
+    return getattr(value, "value", value)
+
+
 def _get_available_decks(db: Session, color: CardColor) -> int:
     """Return current available deck count for a given color.
 
@@ -1034,8 +1038,8 @@ def _shred_cards_logic(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": shoe.color.value,
-            "material": shoe.material.value if shoe.material else None,
+            "color": _enum_value(shoe.color),
+            "material": _enum_value(shoe.material) if shoe.material else None,
             "reason": body.reason,
             "decksShredded": DECKS_PER_SHOE,
             "cardsShredded": DECKS_PER_SHOE * CARDS_PER_DECK,
