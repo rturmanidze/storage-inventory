@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 interface ContainerEvent {
   id: number
   containerId: number
-  eventType: 'CREATED' | 'LOCKED' | 'UNLOCKED' | 'DECK_CONSUMED' | 'ARCHIVED'
+  eventType: 'CREATED' | 'LOCKED' | 'UNLOCKED' | 'QUANTITY_ADJUSTED' | 'DECK_CONSUMED' | 'ARCHIVED'
   decksConsumed: number | null
   shoeId: number | null
   note: string | null
@@ -79,6 +79,7 @@ function EventTypeBadge({ type }: { type: ContainerEvent['eventType'] }) {
     CREATED:       'bg-indigo-100 text-indigo-700',
     LOCKED:        'bg-blue-100 text-blue-700',
     UNLOCKED:      'bg-emerald-100 text-emerald-700',
+    QUANTITY_ADJUSTED: 'bg-violet-100 text-violet-700',
     DECK_CONSUMED: 'bg-amber-100 text-amber-700',
     ARCHIVED:      'bg-gray-100 text-gray-500',
   }
