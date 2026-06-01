@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func
@@ -47,6 +47,13 @@ CUTTING_CARDS_PER_SHOE = 2
 
 # Number of days used to calculate the average daily consumption rate
 FORECAST_LOOKBACK_DAYS = 30
+
+
+def _enum_value(value: Any) -> Optional[str]:
+    """Return Enum.value when present, otherwise return the raw string value."""
+    if value is None:
+        return None
+    return getattr(value, "value", value)
 
 
 def _get_available_decks(db: Session, color: CardColor) -> int:
@@ -822,7 +829,7 @@ def send_shoe_to_studio(
     ):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot send a shoe in status '{shoe.status.value}' to a studio",
+            detail=f"Cannot send a shoe in status '{_enum_value(shoe.status)}' to a studio",
         )
     if shoe.status not in (ShoeStatus.IN_WAREHOUSE, ShoeStatus.RETURNED, ShoeStatus.REFILLED):
         raise HTTPException(status_code=400, detail="Shoe is not in a sendable state")
@@ -842,7 +849,7 @@ def send_shoe_to_studio(
         user_id=current_user.id,
         resource_type="shoe",
         resource_id=shoe_id,
-        detail={"studioId": body.studioId, "studioName": studio.name, "color": shoe.color.value},
+        detail={"studioId": body.studioId, "studioName": studio.name, "color": _enum_value(shoe.color)},
         request=request,
     )
     db.commit()
@@ -893,7 +900,7 @@ def return_shoe_from_studio(
         resource_id=shoe_id,
         detail={
             "studioId": shoe.studioId,
-            "color": shoe.color.value,
+            "color": _enum_value(shoe.color),
             "decksRestored": 0,
             "note": "Shoe returned; decks remain held by shoe (not restored to free pool)",
         },
@@ -962,8 +969,8 @@ def _shred_cards_logic(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": shoe.color.value,
-            "material": shoe.material.value if shoe.material else None,
+            "color": _enum_value(shoe.color),
+            "material": _enum_value(shoe.material),
             "reason": body.reason,
             "decksShredded": DECKS_PER_SHOE,
             "cardsShredded": DECKS_PER_SHOE * CARDS_PER_DECK,
@@ -1040,7 +1047,7 @@ def replace_shoe(
             status_code=400,
             detail=(
                 "Only physically destroyed shoes can be replaced with a new shoe. "
-                "Current status: " + original.status.value + ". "
+                "Current status: " + _enum_value(original.status) + ". "
                 "For shoes with destroyed cards use the recover-shoe endpoint."
             ),
         )
@@ -1053,7 +1060,7 @@ def replace_shoe(
     if available < DECKS_PER_SHOE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Not enough {original.color.value} decks. Available: {available}, required: {DECKS_PER_SHOE}",
+            detail=f"Not enough {_enum_value(original.color)} decks. Available: {available}, required: {DECKS_PER_SHOE}",
         )
 
     # Check cutting card availability
@@ -1126,8 +1133,8 @@ def replace_shoe(
         detail={
             "originalShoeId": shoe_id,
             "shoeNumber": new_shoe.shoeNumber,
-            "color": new_shoe.color.value,
-            "material": new_shoe.material.value if new_shoe.material else None,
+            "color": _enum_value(new_shoe.color),
+            "material": _enum_value(new_shoe.material),
             "decksConsumed": DECKS_PER_SHOE,
             "cuttingCardsConsumed": CUTTING_CARDS_PER_SHOE,
             "sentToStudio": body.studioId,
@@ -1169,7 +1176,7 @@ def recover_shoe(
             status_code=400,
             detail=(
                 "Only shoes with status CARDS_DESTROYED can be recovered. "
-                "Current status: " + shoe.status.value
+                "Current status: " + _enum_value(shoe.status)
             ),
         )
 
@@ -1184,7 +1191,7 @@ def recover_shoe(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": shoe.color.value,
+            "color": _enum_value(shoe.color),
             "shoeNumber": shoe.shoeNumber,
             "deckIncrease": 0,
             "note": "Shoe container recovered; cards remain destroyed",
@@ -1228,7 +1235,7 @@ def refill_shoe(
             status_code=400,
             detail=(
                 "Only empty shoes (EMPTY_SHOE_IN_WAREHOUSE) can be refilled. "
-                "Current status: " + shoe.status.value + ". "
+                "Current status: " + _enum_value(shoe.status) + ". "
                 "Recover the shoe container first if cards were just destroyed."
             ),
         )
@@ -1338,7 +1345,7 @@ def refill_shoe(
             detail={
                 "studioId": body.studioId,
                 "studioName": studio.name,
-                "color": shoe.color.value,
+                "color": _enum_value(shoe.color),
                 "sentAfterRefill": True,
             },
             request=request,
@@ -1388,7 +1395,7 @@ def report_physical_damage(
             detail=(
                 "Physical damage can only be reported for shoes in RETURNED or "
                 "EMPTY_SHOE_IN_WAREHOUSE status. "
-                "Current status: " + shoe.status.value + ". "
+                "Current status: " + _enum_value(shoe.status) + ". "
                 "Ensure cards are returned or destroyed before reporting physical damage."
             ),
         )
@@ -1415,10 +1422,10 @@ def report_physical_damage(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": shoe.color.value,
+            "color": _enum_value(shoe.color),
             "shoeNumber": shoe.shoeNumber,
             "reason": body.reason,
-            "priorStatus": prior_status.value,
+            "priorStatus": _enum_value(prior_status),
             "decksAccountedFor": prior_status == ShoeStatus.RETURNED,
         },
         request=request,
@@ -1456,7 +1463,7 @@ def confirm_physical_destroy(
             status_code=400,
             detail=(
                 "Only shoes in PHYSICALLY_DAMAGED status can be confirmed as destroyed. "
-                "Current status: " + shoe.status.value + ". "
+                "Current status: " + _enum_value(shoe.status) + ". "
                 "Use the report-physical-damage endpoint first."
             ),
         )
@@ -1472,7 +1479,7 @@ def confirm_physical_destroy(
         resource_type="shoe",
         resource_id=shoe_id,
         detail={
-            "color": shoe.color.value,
+            "color": _enum_value(shoe.color),
             "shoeNumber": shoe.shoeNumber,
             "damageReason": shoe.physicalDamageReason,
             "warning": "Irreversible — shoe fully removed from service",
