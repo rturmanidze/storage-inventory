@@ -29,7 +29,9 @@ def engine():
 
     Base.metadata.create_all(bind=eng)
     yield eng
-    Base.metadata.drop_all(bind=eng)
+    with eng.begin() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        Base.metadata.drop_all(bind=conn)
 
 
 @pytest.fixture()

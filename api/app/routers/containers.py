@@ -248,6 +248,13 @@ def consume_one_deck_per_type(
     now = datetime.utcnow()
     result: Dict[DeckNumber, Container] = {}
 
+    # Remove any existing links for this shoe so that refill operations don't
+    # violate the unique constraint on (shoeId, deckType).
+    if shoe_id is not None:
+        db.query(ShoeContainerLink).filter(
+            ShoeContainerLink.shoeId == shoe_id
+        ).delete(synchronize_session="fetch")
+
     for deck_type in DeckNumber:
         q = db.query(Container).filter(
             Container.color == color,
